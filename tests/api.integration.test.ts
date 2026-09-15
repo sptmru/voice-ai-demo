@@ -1,0 +1,426 @@
+import { randomUUID } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
+import type { Server } from 'node:http';
+import pg from 'pg';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createApp } from '../apps/api/src/app.js';
+import { PostgresRepository } from '../packages/db/src/index.js';
+import { migrate } from '../packages/db/src/migrate.js';
+import { RagService } from '../packages/rag/src/index.js';
+import { seedKnowledge, seedOperationalData } from '../scripts/seed.js';
+import type { AgentEvent, ScenarioId } from '../packages/core/src/domain.js';
+
+const databaseUrl = process.env.TEST_DATABASE_URL;
+
+describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE', () => {
+  const schema = `relay_api_test_${randomUUID().replaceAll('-', '')}`;
+  const admin = new pg.Pool({ connectionString: databaseUrl });
+  const database = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema},public` });
+  const repo = new PostgresRepository(database);
+  const rag = new RagService(database);
+  let api: ReturnType<typeof createApp>;
+  let server: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    await admin.query('CREATE EXTENSION IF NOT EXISTS vector');
+    await admin.query(`CREATE SCHEMA ${schema}`);
+    await migrate(database);
+    await seedOperationalData(database);
+    await seedKnowledge(database);
+    api = createApp(repo, rag, database);
+    api.app.use(api.errorHandler);
+    server = await new Promise<Server>((resolve) => {
+      const instance = api.app.listen(0, '127.0.0.1', () => resolve(instance));
+    });
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+
+  afterAll(async () => {
+    if (server) {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+    }
+    await database.end();
+    await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
+    await admin.end();
+  });
+
+  async function request(
+    path: string,
+    options: { cookie?: string; method?: string; body?: unknown; headers?: Record<string, string> } = {},
+  ) {
+    const response = await fetch(`${base}${path}`, {
+      method: options.method ?? (options.body !== undefined ? 'POST' : 'GET'),
+      headers: {
+        ...(options.cookie ? { Cookie: options.cookie } : {}),
+        ...(options.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        ...options.headers,
+      },
+      ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
+    });
+    return { response, body: (await response.json()) as any };
+  }
+
+  async function start(scenarioId: ScenarioId = 'carrier-incident', cookie?: string) {
+    const result = await request('/api/sessions', { body: { scenarioId }, cookie });
+    expect(result.response.status).toBe(201);
+    return {
+      id: result.body.session.id as string,
+      cookie: cookie ?? result.response.headers.get('set-cookie')!.split(';')[0],
+      response: result.response,
+    };
+  }
+
+  async function subscribe(id: string, cookie: string, after: number, useHeader = false) {
+    const abort = new AbortController();
+    const response = await fetch(`${base}/api/sessions/${id}/events${useHeader ? '' : `?after=${after}`}`, {
+      headers: { Cookie: cookie, ...(useHeader ? { 'Last-Event-ID': String(after) } : {}) },
+      signal: abort.signal,
+    });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toContain('text/event-stream');
+    const reader = response.body!.getReader();
+    const decoder = new TextDecoder();
+    let pending = '';
+    const events: AgentEvent[] = [];
+    return {
+      async until(predicate: (events: AgentEvent[]) => boolean): Promise<AgentEvent[]> {
+        const timer = setTimeout(() => abort.abort(new Error('Timed out waiting for SSE events')), 8000);
+        try {
+          while (!predicate(events)) {
+            const { value, done } = await reader.read();
+            if (done) throw new Error('SSE closed before expected event');
+            pending += decoder.decode(value, { stream: true });
+            let boundary: number;
+            while ((boundary = pending.indexOf('\n\n')) >= 0) {
+              const frame = pending.slice(0, boundary);
+              pending = pending.slice(boundary + 2);
+              const data = frame.split('\n').find((line) => line.startsWith('data: '));
+              if (data) events.push(JSON.parse(data.slice(6)) as AgentEvent);
+            }
+          }
+          return events;
+        } finally {
+          clearTimeout(timer);
+        }
+      },
+      async close() {
+        await reader.cancel();
+        abort.abort();
+      },
+    };
+  }
+
+  it('binds a session to an HttpOnly owner cookie and blocks cross-owner reads and writes', async () => {
+    const alice = await start();
+    const bob = await start();
+    expect(alice.response.headers.get('set-cookie')).toContain('HttpOnly');
+    expect(alice.response.headers.get('set-cookie')).toContain('SameSite=Strict');
+    const list = await request('/api/sessions', { cookie: alice.cookie });
+    expect(list.body.map((session: { id: string }) => session.id)).toContain(alice.id);
+    expect(list.body.map((session: { id: string }) => session.id)).not.toContain(bob.id);
+    const detail = await request(`/api/sessions/${alice.id}`, { cookie: alice.cookie });
+    expect(
+      detail.body.memory.some(
+        (item: { kind: string; content: string }) =>
+          item.kind === 'fact' && item.content.includes('Europe/London'),
+      ),
+    ).toBe(true);
+    expect(
+      detail.body.memory.some(
+        (item: { kind: string; content: string }) =>
+          item.kind === 'preference' && item.content.includes('email'),
+      ),
+    ).toBe(true);
+    expect((await request(`/api/sessions/${alice.id}`, { cookie: bob.cookie })).response.status).toBe(404);
+    expect(
+      (
+        await request(`/api/sessions/${alice.id}/messages`, {
+          cookie: bob.cookie,
+          body: { text: 'Investigate' },
+        })
+      ).response.status,
+    ).toBe(404);
+    expect(
+      (await request(`/api/sessions/${alice.id}/end`, { cookie: bob.cookie, body: {} })).response.status,
+    ).toBe(404);
+    expect((await request(`/api/sessions/${alice.id}/events`, { cookie: bob.cookie })).response.status).toBe(
+      404,
+    );
+    expect((await repo.getSession(alice.id)).status).toBe('active');
+  });
+
+  it('rejects a hostile browser Origin before creating any session', async () => {
+    const before = Number((await database.query('SELECT count(*) FROM support_sessions')).rows[0].count);
+    const result = await request('/api/sessions', {
+      body: { scenarioId: 'carrier-incident' },
+      headers: { Origin: 'https://hostile.example' },
+    });
+    expect(result.response.status).toBe(403);
+    expect(result.body.error).toBe('Origin not allowed');
+    expect(result.response.headers.get('access-control-allow-origin')).toBeNull();
+    expect(Number((await database.query('SELECT count(*) FROM support_sessions')).rows[0].count)).toBe(
+      before,
+    );
+  });
+
+  it('streams actual diagnostic tool/retrieval/outcome events and replays only events after a cursor', async () => {
+    const session = await start();
+    const live = await subscribe(session.id, session.cookie, 0);
+    try {
+      const initial = await live.until((events) => events.some((event) => event.type === 'support.state'));
+      expect(initial.some((event) => event.type === 'customer.identified')).toBe(true);
+      const result = await request(`/api/sessions/${session.id}/messages`, {
+        cookie: session.cookie,
+        body: { text: 'UK SIP 403 failures. Please investigate and create a ticket.' },
+      });
+      expect(result.response.status).toBe(200);
+      expect(result.body.outcome.diagnosis).toContain('INC-UK-20260915');
+      expect(result.body.outcome.actions).toContain('tool:search_knowledge_base');
+      expect(result.body.outcome.actions).toContain('tool:check_trunk_status');
+      const events = await live.until((items) =>
+        items.some((event) => event.type === 'transcript' && event.payload.role === 'assistant'),
+      );
+      expect(
+        events.some((event) => event.type === 'tool.completed' && event.payload.name === 'get_recent_calls'),
+      ).toBe(true);
+      const retrieval = events.find((event) => event.type === 'retrieval.completed')!;
+      expect((retrieval.payload.chunks as unknown[]).length).toBeGreaterThan(0);
+      expect(events.some((event) => event.type === 'call.outcome')).toBe(true);
+      const persisted = await repo.getEvents(session.id);
+      expect(events.map((event) => event.id)).toEqual(persisted.map((event) => event.id));
+      expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
+      expect((await repo.getTickets(session.id))[0].id).toBe(result.body.outcome.ticketId);
+      expect(result.body.outcome.actions).toContain(`ticket:${result.body.outcome.ticketId}`);
+      const cursor = events.at(-4)!.id;
+      const replay = await subscribe(session.id, session.cookie, cursor, true);
+      try {
+        expect((await replay.until((items) => items.length === 3)).map((event) => event.id)).toEqual(
+          events.filter((event) => event.id > cursor).map((event) => event.id),
+        );
+      } finally {
+        await replay.close();
+      }
+    } finally {
+      await live.close();
+    }
+  });
+
+  it('does not lose or duplicate events published while the initial replay query is in flight', async () => {
+    const session = await start();
+    const originalGetEvents = repo.getEvents.bind(repo);
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const reading = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    repo.getEvents = async (id, after) => {
+      const replay = await originalGetEvents(id, after);
+      if (id === session.id) {
+        entered();
+        await gate;
+      }
+      return replay;
+    };
+    const live = await subscribe(session.id, session.cookie, 0);
+    try {
+      await reading;
+      const concurrent = await api.stream.emitForSession(session.id)(
+        'support.state',
+        { state: 'during-replay' },
+        undefined,
+        'opaque-replay-marker',
+      );
+      release();
+      const received = await live.until((events) => events.some((event) => event.id === concurrent.id));
+      expect(received.map((event) => event.id)).toEqual(
+        (await originalGetEvents(session.id)).map((event) => event.id),
+      );
+      expect(received.filter((event) => event.id === concurrent.id)).toHaveLength(1);
+    } finally {
+      release();
+      repo.getEvents = originalGetEvents;
+      await live.close();
+    }
+  });
+
+  it('persists opaque provider call IDs and confirmation-prefixed IDs and rotates credentials once', async () => {
+    const session = await start('invalid-credentials');
+    const other = await start('invalid-credentials', session.cookie);
+    const call = {
+      id: 'provider-function-call_opaque:1',
+      name: 'reset_trunk_credentials',
+      input: { reason: 'Explicitly requested a local reset' },
+    };
+    const proposed = await api.runtime.executeTool(session.id, call);
+    expect(proposed.status).toBe('pending-confirmation');
+    expect((await repo.getSession(session.id)).snapshot.trunk.credentialVersion).toBe(1);
+    const foreign = await request(`/api/sessions/${other.id}/confirmations/${proposed.confirmationId}`, {
+      cookie: session.cookie,
+      body: { approve: true },
+    });
+    expect(foreign.response.status).toBe(404);
+    expect((await repo.getConfirmations(session.id))[0].status).toBe('pending');
+    const approved = await request(`/api/sessions/${session.id}/confirmations/${proposed.confirmationId}`, {
+      cookie: session.cookie,
+      body: { approve: true },
+    });
+    expect(approved.response.status).toBe(200);
+    expect(approved.body.status).toBe('completed');
+    expect((await repo.getSession(session.id)).snapshot.trunk).toMatchObject({
+      credentialsValid: true,
+      credentialVersion: 2,
+      registered: false,
+    });
+    expect((await repo.getSession(other.id)).snapshot.trunk.credentialVersion).toBe(1);
+    const persisted = await repo.getEvents(session.id);
+    expect(persisted.some((event) => event.correlationId === call.id)).toBe(true);
+    expect(
+      persisted.some(
+        (event) =>
+          event.correlationId === `confirmation:${proposed.confirmationId}` &&
+          event.type === 'tool.completed',
+      ),
+    ).toBe(true);
+    const duplicate = await request(`/api/sessions/${session.id}/confirmations/${proposed.confirmationId}`, {
+      cookie: session.cookie,
+      body: { approve: true },
+    });
+    expect(duplicate.response.status).toBe(409);
+    expect(await repo.getActions(session.id)).toHaveLength(1);
+  });
+
+  it('retains every persisted event when overlapping publishers finish out of order', async () => {
+    const session = await start();
+    const live = await subscribe(session.id, session.cookie, 0);
+    await live.until((events) => events.some((event) => event.type === 'support.state'));
+    const originalAppend = repo.appendEvent.bind(repo);
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const inserted = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    repo.appendEvent = async (...args) => {
+      const event = await originalAppend(...args);
+      if (args[0] === session.id && args[2].stage === 'delayed-first') {
+        entered();
+        await gate;
+      }
+      return event;
+    };
+    try {
+      const emit = api.stream.emitForSession(session.id);
+      const first = emit('support.state', { stage: 'delayed-first' });
+      await inserted;
+      const second = emit('support.state', { stage: 'second' });
+      const releaseTimer = setTimeout(release, 50);
+      await Promise.all([first, second]);
+      clearTimeout(releaseTimer);
+      const final = await emit('support.state', { stage: 'final' });
+      const received = await live.until((events) => events.some((event) => event.id === final.id));
+      expect(received.map((event) => event.id)).toEqual(
+        (await repo.getEvents(session.id)).map((event) => event.id),
+      );
+    } finally {
+      release();
+      repo.appendEvent = originalAppend;
+      await live.close();
+    }
+  });
+
+  it('rejects expired approval and malformed input with actionable HTTP statuses', async () => {
+    const session = await start('invalid-credentials');
+    const pending = await repo.createConfirmation(session.id, 'reset_trunk_credentials', {
+      reason: 'Expired test request',
+    });
+    await database.query(
+      "UPDATE pending_confirmations SET expires_at=now()-interval '1 minute' WHERE id=$1",
+      [pending.id],
+    );
+    const expired = await request(`/api/sessions/${session.id}/confirmations/${pending.id}`, {
+      cookie: session.cookie,
+      body: { approve: true },
+    });
+    expect(expired.response.status).toBe(410);
+    expect(await repo.getActions(session.id)).toHaveLength(0);
+    expect(
+      (await request(`/api/sessions/${session.id}/messages`, { cookie: session.cookie, body: { text: '' } }))
+        .response.status,
+    ).toBe(400);
+    expect(
+      (
+        await request(`/api/sessions/${session.id}/messages`, {
+          cookie: session.cookie,
+          body: { text: 'hello', customerId: 'someone-else' },
+        })
+      ).response.status,
+    ).toBe(400);
+    expect((await request('/api/sessions/not-a-uuid', { cookie: session.cookie })).response.status).toBe(400);
+    expect(
+      (await request(`/api/sessions/${session.id}/events?after=NaN`, { cookie: session.cookie })).response
+        .status,
+    ).toBe(400);
+  });
+
+  it('returns a conflict during an existing operation and refuses messages after session end', async () => {
+    const session = await start();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const operation = api.lock(session.id, () => gate);
+    try {
+      expect(
+        (
+          await request(`/api/sessions/${session.id}/messages`, {
+            cookie: session.cookie,
+            body: { text: 'Investigate' },
+          })
+        ).response.status,
+      ).toBe(409);
+    } finally {
+      release();
+      await operation;
+    }
+    expect(
+      (await request(`/api/sessions/${session.id}/end`, { cookie: session.cookie, body: {} })).response
+        .status,
+    ).toBe(200);
+    const before = (await repo.getEvents(session.id)).length;
+    expect(
+      (await request(`/api/sessions/${session.id}/end`, { cookie: session.cookie, body: {} })).response
+        .status,
+    ).toBe(200);
+    expect((await repo.getEvents(session.id)).length).toBe(before);
+    expect(
+      (
+        await request(`/api/sessions/${session.id}/messages`, {
+          cookie: session.cookie,
+          body: { text: 'Investigate' },
+        })
+      ).response.status,
+    ).toBe(409);
+    expect((await repo.getEvents(session.id)).length).toBe(before);
+    const ended = await repo.createConfirmation(session.id, 'reset_trunk_credentials', {
+      reason: 'Cannot execute after end',
+    });
+    expect(
+      (
+        await request(`/api/sessions/${session.id}/confirmations/${ended.id}`, {
+          cookie: session.cookie,
+          body: { approve: true },
+        })
+      ).response.status,
+    ).toBe(409);
+    expect((await repo.getSession(session.id)).snapshot.trunk.credentialVersion).toBe(1);
+  });
+});

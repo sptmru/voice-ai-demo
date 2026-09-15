@@ -1,0 +1,52 @@
+{
+  "name": "relay-voice-support",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.17.1",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"corepack pnpm dev:api\" \"corepack pnpm dev:web\"",
+    "dev:api": "tsx watch --env-file-if-exists=.env apps/api/src/index.ts",
+    "dev:web": "corepack pnpm --dir apps/web dev",
+    "db:migrate": "tsx --env-file-if-exists=.env packages/db/src/migrate.ts",
+    "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts",
+    "typecheck": "tsc --noEmit && corepack pnpm --dir apps/web typecheck",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "build": "corepack pnpm typecheck && corepack pnpm --dir apps/web build",
+    "start:api": "tsx --env-file-if-exists=.env apps/api/src/index.ts",
+    "live:gemini": "tsx --env-file-if-exists=.env scripts/live-gemini.ts",
+    "live:fixture": "tsx --env-file-if-exists=.env scripts/voice-fixture.ts",
+    "live:browser": "tsx scripts/live-browser.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.8.1",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "multer": "^2.0.2",
+    "pdf-parse": "^1.1.1",
+    "pg": "^8.16.3",
+    "pino": "^9.9.0",
+    "ws": "^8.18.3",
+    "zod": "^3.25.76",
+    "zod-to-json-schema": "^3.24.6"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.18.0",
+    "@types/pdf-parse": "^1.1.5",
+    "@types/pg": "^8.15.5",
+    "@types/ws": "^8.18.1",
+    "concurrently": "^9.2.1",
+    "prettier": "^3.9.6",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

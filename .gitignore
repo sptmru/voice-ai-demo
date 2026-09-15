@@ -1,0 +1,12 @@
+node_modules/
+.next/
+.next-production/
+dist/
+.env
+.env.*
+!.env.example
+.cache/
+coverage/
+test-results/
+playwright-report/
+*.tsbuildinfo

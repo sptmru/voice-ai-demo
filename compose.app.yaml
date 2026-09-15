@@ -1,0 +1,44 @@
+# Optional fully containerized app. Start using both compose files.
+services:
+  api:
+    build: .
+    image: relay-voice-support:local
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://relay:relay_local@db:5432/relay
+      HOST: 0.0.0.0
+      PORT: 3101
+      EMBEDDING_CACHE: /app/.cache/models
+    ports:
+      - '127.0.0.1:3101:3101'
+    volumes:
+      - relay_models:/app/.cache/models
+    depends_on:
+      db:
+        condition: service_healthy
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3101/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+  web:
+    image: relay-voice-support:local
+    command: ['pnpm', '--dir', 'apps/web', 'start']
+    environment:
+      API_INTERNAL_URL: http://api:3101
+    ports:
+      - '127.0.0.1:3100:3100'
+    depends_on:
+      - api
+    init: true
+    restart: unless-stopped
+volumes:
+  relay_models:
