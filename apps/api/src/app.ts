@@ -158,6 +158,22 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     res.flushHeaders();
     await stream.subscribe(String(req.params.id), res, afterId);
   });
+  app.delete('/api/sessions/:id', async (req, res) => {
+    await owned(req);
+    const id = String(req.params.id);
+    await lock(id, async () => {
+      await owned(req);
+      if (voiceActive.has(id))
+        throw Object.assign(new Error('Disconnect voice before deleting the support session.'), {
+          status: 409,
+        });
+      await stream.drain(id);
+      if (!(await repo.deleteSession(id)))
+        throw Object.assign(new Error('Session not found'), { status: 404 });
+      stream.closeSession(id);
+    });
+    res.sendStatus(204);
+  });
   app.post('/api/sessions/:id/messages', async (req, res) => {
     await owned(req);
     const session = await repo.getSession(String(req.params.id));
@@ -171,7 +187,12 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       .object({ text: z.string().trim().min(1).max(4000) })
       .strict()
       .parse(req.body);
-    const result = await lock(String(req.params.id), () => runtime.message(String(req.params.id), text));
+    const result = await lock(String(req.params.id), async () => {
+      await owned(req);
+      if (voiceActive.has(session.id))
+        throw Object.assign(new Error('Disconnect voice before using local text mode.'), { status: 409 });
+      return runtime.message(String(req.params.id), text);
+    });
     res.json(result);
   });
   app.post('/api/sessions/:id/confirmations/:confirmationId', async (req, res) => {
@@ -188,27 +209,44 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     if (confirmation.status !== 'pending')
       throw Object.assign(new Error('Confirmation was already consumed'), { status: 409 });
     const { approve } = z.object({ approve: z.boolean() }).strict().parse(req.body);
-    const result = await lock(String(req.params.id), () =>
-      runtime.confirm(String(req.params.id), String(req.params.confirmationId), approve),
-    );
-    // An upstream failure cannot turn a committed local action into an HTTP failure.
-    try {
-      await confirmationNotifier?.(session.id, result);
-    } catch {
-      await stream.emitForSession(session.id)('error', {
-        source: 'voice',
-        message: 'The confirmation result was saved, but could not be delivered to the voice provider.',
-      });
-    }
+    const result = await lock(String(req.params.id), async () => {
+      await owned(req);
+      const result = await runtime.confirm(String(req.params.id), String(req.params.confirmationId), approve);
+      // An upstream failure cannot turn a committed local action into an HTTP failure.
+      try {
+        await confirmationNotifier?.(session.id, result);
+      } catch {
+        await stream.emitForSession(session.id)('error', {
+          source: 'voice',
+          message: 'The confirmation result was saved, but could not be delivered to the voice provider.',
+        });
+      }
+      return result;
+    });
     res.json(result);
   });
   app.post('/api/sessions/:id/end', async (req, res) => {
     await owned(req);
     if (voiceActive.has(String(req.params.id)))
       throw Object.assign(new Error('Disconnect voice before ending the support session.'), { status: 409 });
-    res.json(await lock(String(req.params.id), () => runtime.endSession(String(req.params.id))));
+    res.json(
+      await lock(String(req.params.id), async () => {
+        await owned(req);
+        if (voiceActive.has(String(req.params.id)))
+          throw Object.assign(new Error('Disconnect voice before ending the support session.'), {
+            status: 409,
+          });
+        return runtime.endSession(String(req.params.id));
+      }),
+    );
   });
   app.get('/api/knowledge', async (_req, res) => res.json(await rag.listDocuments()));
+  app.delete('/api/knowledge/:id', async (req, res) => {
+    const id = idSchema.parse(req.params.id);
+    if (!(await rag.deleteDocument(id)))
+      throw Object.assign(new Error('Document not found'), { status: 404 });
+    res.sendStatus(204);
+  });
   app.post('/api/knowledge/search', async (req, res) => {
     const { query } = z
       .object({ query: z.string().trim().min(1).max(1000) })

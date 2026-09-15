@@ -29,13 +29,30 @@ export class BrowserVoiceClient {
   private closed = false;
   private ready = false;
   private startTimer?: ReturnType<typeof setTimeout>;
+  private preparation?: Promise<void>;
+  private closing?: Promise<void>;
+  private cancelStart?: () => void;
   constructor(private options: VoiceClientOptions) {}
 
-  async start(): Promise<void> {
+  /** Start microphone permission and unlock audio during the user's click, before HTTP setup. */
+  prepare(): Promise<void> {
+    this.preparation ??= this.prepareMicrophone();
+    return this.preparation;
+  }
+
+  private async prepareMicrophone(): Promise<void> {
     try {
       if (!navigator.mediaDevices?.getUserMedia)
         throw new Error('Microphone access requires localhost or HTTPS and a compatible browser.');
       this.options.onEvent({ type: 'state', state: 'requesting-microphone' });
+      const audioReady: Promise<void>[] = [];
+      if (this.options.provider === 'gemini') {
+        this.output = new AudioContext({ sampleRate: 24000 });
+        this.capture = new AudioContext({ sampleRate: 16000 });
+        audioReady.push(this.output.resume(), this.capture.resume());
+      }
+      // Attach rejection handlers immediately while the permission prompt is open.
+      const audioResult = Promise.all(audioReady).catch((error: unknown) => error);
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
@@ -46,6 +63,19 @@ export class BrowserVoiceClient {
       this.stream.getAudioTracks().forEach((track) => {
         track.enabled = false;
       });
+      const audioError = await audioResult;
+      if (!Array.isArray(audioError)) throw audioError;
+    } catch (error) {
+      await this.close();
+      throw error;
+    }
+  }
+
+  async start(url?: string): Promise<void> {
+    if (url) this.options.url = url;
+    try {
+      await this.prepare();
+      if (this.closed) return;
       this.options.onEvent({ type: 'state', state: 'connecting' });
       let sdpOffer: string | undefined;
       if (this.options.provider === 'openai') {
@@ -72,26 +102,23 @@ export class BrowserVoiceClient {
             void this.close();
           }
         };
-        for (const track of this.stream.getTracks()) this.peer.addTrack(track, this.stream);
+        for (const track of this.stream!.getTracks()) this.peer.addTrack(track, this.stream!);
         // Provider data channel needed for Realtime; business tools only use server sideband.
         this.peer.createDataChannel('oai-events');
         const offer = await this.peer.createOffer();
         await this.peer.setLocalDescription(offer);
         sdpOffer = offer.sdp;
       } else {
-        this.output = new AudioContext({ sampleRate: 24000 });
-        await this.output.resume();
-        this.capture = new AudioContext({ sampleRate: 16000 });
-        await this.capture.audioWorklet.addModule('/audio-capture.js');
+        await this.capture!.audioWorklet.addModule('/audio-capture.js');
         if (this.closed) return;
-        this.source = this.capture.createMediaStreamSource(this.stream);
-        this.worklet = new AudioWorkletNode(this.capture, 'relay-capture', {
+        this.source = this.capture!.createMediaStreamSource(this.stream!);
+        this.worklet = new AudioWorkletNode(this.capture!, 'relay-capture', {
           processorOptions: { sampleRate: 16000 },
         });
         // Keep the worklet graph running with zero gain to prevent mic monitoring/echo.
-        this.gain = this.capture.createGain();
+        this.gain = this.capture!.createGain();
         this.gain.gain.value = 0;
-        this.source.connect(this.worklet).connect(this.gain).connect(this.capture.destination);
+        this.source.connect(this.worklet).connect(this.gain).connect(this.capture!.destination);
         this.worklet.port.onmessage = (event) => {
           if (!this.ready || this.muted || this.socket?.readyState !== WebSocket.OPEN) return;
           if (this.socket.bufferedAmount > 256000) {
@@ -106,13 +133,19 @@ export class BrowserVoiceClient {
             JSON.stringify({ type: 'audio', data: toBase64(event.data as ArrayBuffer), sampleRate: 16000 }),
           );
         };
-        await this.capture.resume();
+        await this.capture!.resume();
       }
       if (this.closed) return;
       await new Promise<void>((resolve, reject) => {
         const socket = new WebSocket(this.options.url);
         this.socket = socket;
         let settled = false;
+        this.cancelStart = () => {
+          if (!settled) {
+            settled = true;
+            reject(new Error('Voice connection cancelled.'));
+          }
+        };
         const fail = (message: string) => {
           if (!settled) {
             settled = true;
@@ -229,9 +262,14 @@ export class BrowserVoiceClient {
   sendText(text: string) {
     if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(JSON.stringify({ type: 'text', text }));
   }
-  async close() {
-    if (this.closed) return;
+  close(): Promise<void> {
+    this.closing ??= this.closeResources();
+    return this.closing;
+  }
+  private async closeResources() {
     this.closed = true;
+    this.cancelStart?.();
+    this.cancelStart = undefined;
     this.ready = false;
     clearTimeout(this.startTimer);
     this.clearPlayback();

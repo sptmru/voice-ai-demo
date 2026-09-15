@@ -221,6 +221,7 @@ export interface Repository {
   createSession(scenario: ScenarioId): Promise<SupportSession>;
   getSession(id: string): Promise<SupportSession>;
   listSessions(allowedIds?: string[]): Promise<SupportSession[]>;
+  deleteSession(id: string): Promise<boolean>;
   updateSession(
     id: string,
     patch: Partial<Pick<SupportSession, 'status' | 'endedAt' | 'diagnosis' | 'outcome' | 'snapshot'>>,
@@ -264,4 +265,5 @@ export interface RetrievalService {
   search(query: string, limit?: number): Promise<RetrievedChunk[]>;
   ingest(input: { title: string; content: string; source: string; type: string }): Promise<KnowledgeDocument>;
   listDocuments(): Promise<KnowledgeDocument[]>;
+  deleteDocument(id: string): Promise<boolean>;
 }

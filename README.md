@@ -25,9 +25,13 @@ For a public demo through Cloudflare, see [Tunnel setup](docs/deployment.md#clou
 
 Select **UK carrier incident → Start session → Try…**. The agent runs real local tools, retrieves four knowledge chunks, finds the incident, opens a persisted ticket, and records a validated outcome. **End session** produces the after-call view and saves selective customer memory. **Session history** reopens the full record from the same browser.
 
+**Start session** and **Reset session** automatically connect the selected voice provider when its key is configured. Allow microphone access when prompted. Missing credentials or denied microphone access leave the text workflow available; **Reconnect voice** retries a failed connection. Opening an old session from history does not start a new call.
+
+Use the trash button on a knowledge document or session-history row to delete it after confirmation. Document deletion removes its indexed passages and embeddings from future retrieval; historical citations already saved in sessions remain. Deleting a session closes its call and removes its events, local tickets/actions, confirmations and memory derived from that conversation. Only the owning browser can delete a session. Knowledge is shared demo data. Running `db:seed` later restores deleted built-in documents from `docs/knowledge`; uploaded documents are not restored.
+
 ## Voice and implemented milestones
 
-All five implementation milestones are present: the text support workflow, Gemini Live, ingestion and customer memory, the OpenAI Realtime adapter, and the responsive demo workbench. Select a provider, start a session, then connect the microphone. Set `GEMINI_API_KEY` or `OPENAI_API_KEY` privately in `.env`; the default is Gemini. See [provider setup and transport differences](docs/providers.md).
+All five implementation milestones are present: the text support workflow, Gemini Live, ingestion and customer memory, the OpenAI Realtime adapter, and the responsive demo workbench. Select a provider and start a session; microphone connection starts automatically. Set `GEMINI_API_KEY` or `OPENAI_API_KEY` privately in `.env`; the default is Gemini. See [provider setup and transport differences](docs/providers.md).
 
 Gemini was verified against the real API, including synthetic microphone speech through Chromium, live tools, retrieval, a persisted ticket and an outcome. OpenAI passes protocol and shared-scenario tests with simulated upstream transports; a real OpenAI call remains unverified because its key was not supplied. Browser audio is implemented; optional PSTN is outside scope.
 
@@ -58,7 +62,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-Verified on 2026-09-15: **53 unit tests, 36 PostgreSQL/integration tests and 4 browser tests passed**, along with type checking and the production build. Full evidence and limitations are in [validation](docs/validation.md).
+Verified on 2026-09-15: **55 unit tests, 42 PostgreSQL/integration tests and 7 browser tests passed**, along with type checking and the production build. Full evidence and limitations are in [validation](docs/validation.md).
 
 The production web build uses `.next-production`, separate from `.next` used by the dev server. Live verification scripts are documented in [providers](docs/providers.md); these make billed provider calls and are separate from automated fixture tests.
 

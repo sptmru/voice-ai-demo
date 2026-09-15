@@ -1307,6 +1307,7 @@ h1 {
   gap: 16px;
 }
 .document-card {
+  position: relative;
   background: #fff;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1399,6 +1400,95 @@ h1 {
 }
 .history-view .trace-empty .button {
   margin-top: 20px;
+}
+.history-entry {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.history-entry .history-row {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.history-row > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.delete-button {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #7a8276;
+  cursor: pointer;
+}
+.delete-button:hover:not(:disabled) {
+  color: #a63832;
+  border-color: #e7b5b0;
+  background: #fff5f3;
+}
+.document-delete {
+  position: absolute;
+  top: 23px;
+  right: 23px;
+}
+.session-delete {
+  align-self: center;
+}
+.empty-documents {
+  color: #63715a;
+  grid-column: 1 / -1;
+  padding: 20px 0;
+}
+.delete-dialog {
+  width: min(460px, calc(100vw - 32px));
+  padding: 28px;
+  margin: auto;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: #fff;
+  color: #273722;
+  box-shadow: 0 24px 80px #1d2e2633;
+}
+.delete-dialog::backdrop {
+  background: #12261c80;
+}
+.delete-symbol {
+  color: #a63832;
+}
+.delete-dialog h2 {
+  font-size: 21px;
+  margin: 16px 0 12px;
+}
+.delete-dialog p {
+  font-size: 13px;
+  line-height: 1.65;
+}
+.delete-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  margin-bottom: 12px;
+}
+.delete-error {
+  color: #a63832;
+  margin-top: 12px;
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.button.danger {
+  background: #a63832;
+  border: 1px solid #a63832;
+  color: #fff;
 }
 .sr-only {
   position: absolute;

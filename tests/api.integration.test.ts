@@ -61,7 +61,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
       },
       ...(options.body !== undefined ? { body: JSON.stringify(options.body) } : {}),
     });
-    return { response, body: (await response.json()) as any };
+    return { response, body: response.status === 204 ? undefined : ((await response.json()) as any) };
   }
 
   async function start(scenarioId: ScenarioId = 'carrier-incident', cookie?: string) {
@@ -165,6 +165,217 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     expect(Number((await database.query('SELECT count(*) FROM support_sessions')).rows[0].count)).toBe(
       before,
     );
+  });
+
+  it('deletes only an owned session and atomically removes its records and derived memory', async () => {
+    const session = await start();
+    const other = await start();
+    const customerId = (await repo.getSession(session.id)).customerId;
+    await repo.createTicket(session.id, {
+      subject: 'Delete fixture',
+      description: 'Local test',
+      severity: 'low',
+    });
+    await repo.createAction(session.id, 'callback', { at: 'later' }, 'delete-fixture');
+    await repo.createConfirmation(session.id, 'reset_trunk_credentials', { reason: 'Local test' });
+    await repo.saveMemory(customerId, 'summary', `Deletion summary ${session.id}`, session.id);
+    await repo.saveMemory(customerId, 'case', `Deletion case ${session.id}`, session.id);
+    await repo.saveMemory(customerId, 'summary', `Retained summary ${other.id}`, other.id);
+    const factsBefore = (
+      await database.query('SELECT id FROM customer_memory WHERE source_session_id IS NULL ORDER BY id')
+    ).rows;
+    expect(
+      (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: other.cookie })).response
+        .status,
+    ).toBe(404);
+    expect(
+      (await request(`/api/sessions/${randomUUID()}`, { method: 'DELETE', cookie: session.cookie })).response
+        .status,
+    ).toBe(404);
+    expect(
+      (await request('/api/sessions/not-a-uuid', { method: 'DELETE', cookie: session.cookie })).response
+        .status,
+    ).toBe(400);
+    expect(
+      (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie })).response
+        .status,
+    ).toBe(204);
+    for (const table of [
+      'agent_events',
+      'support_tickets',
+      'support_actions',
+      'pending_confirmations',
+      'api_session_owners',
+    ]) {
+      expect(
+        (await database.query(`SELECT count(*)::int AS n FROM ${table} WHERE session_id=$1`, [session.id]))
+          .rows[0].n,
+      ).toBe(0);
+    }
+    expect(
+      (
+        await database.query('SELECT count(*)::int AS n FROM customer_memory WHERE source_session_id=$1', [
+          session.id,
+        ])
+      ).rows[0].n,
+    ).toBe(0);
+    expect(
+      (
+        await database.query('SELECT count(*)::int AS n FROM customer_memory WHERE content LIKE $1', [
+          `%${session.id}%`,
+        ])
+      ).rows[0].n,
+    ).toBe(0);
+    expect(
+      (await database.query('SELECT id FROM customer_memory WHERE source_session_id IS NULL ORDER BY id'))
+        .rows,
+    ).toEqual(factsBefore);
+    expect((await repo.getSession(other.id)).status).toBe('active');
+    expect(
+      (await database.query('SELECT id FROM customer_memory WHERE source_session_id=$1', [other.id]))
+        .rowCount,
+    ).toBe(1);
+    expect((await request('/api/sessions', { cookie: session.cookie })).body).toEqual([]);
+    expect((await request(`/api/sessions/${session.id}`, { cookie: session.cookie })).response.status).toBe(
+      404,
+    );
+    expect(
+      (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie })).response
+        .status,
+    ).toBe(404);
+  });
+
+  it('closes a deleted session SSE stream and refuses new subscriptions', async () => {
+    const session = await start();
+    const abort = new AbortController();
+    const response = await fetch(`${base}/api/sessions/${session.id}/events`, {
+      headers: { Cookie: session.cookie },
+      signal: abort.signal,
+    });
+    const reader = response.body!.getReader();
+    await reader.read();
+    try {
+      expect(
+        (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie })).response
+          .status,
+      ).toBe(204);
+      const timeout = setTimeout(() => abort.abort(), 3000);
+      try {
+        let done = false;
+        while (!done) done = (await reader.read()).done;
+        expect(done).toBe(true);
+      } finally {
+        clearTimeout(timeout);
+      }
+      expect(
+        (await request(`/api/sessions/${session.id}/events`, { cookie: session.cookie })).response.status,
+      ).toBe(404);
+    } finally {
+      abort.abort();
+    }
+  });
+
+  it('rejects deletion while busy or voice-connected and blocks mutations during deletion', async () => {
+    const session = await start();
+    let release!: () => void;
+    const operation = api.lock(
+      session.id,
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    );
+    try {
+      expect(
+        (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie })).response
+          .status,
+      ).toBe(409);
+    } finally {
+      release();
+      await operation;
+    }
+    api.voiceActive.add(session.id);
+    try {
+      expect(
+        (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie })).response
+          .status,
+      ).toBe(409);
+    } finally {
+      api.voiceActive.delete(session.id);
+    }
+    const originalDelete = repo.deleteSession.bind(repo);
+    let deleting!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      deleting = resolve;
+    });
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    repo.deleteSession = async (id) => {
+      deleting();
+      await gate;
+      return originalDelete(id);
+    };
+    const deletion = request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie });
+    try {
+      await entered;
+      expect(
+        (
+          await request(`/api/sessions/${session.id}/messages`, {
+            cookie: session.cookie,
+            body: { text: 'Investigate' },
+          })
+        ).response.status,
+      ).toBe(409);
+    } finally {
+      release();
+      repo.deleteSession = originalDelete;
+    }
+    expect((await deletion).response.status).toBe(204);
+  });
+
+  it('closes an SSE subscription even when deletion races its initial replay', async () => {
+    const session = await start();
+    const originalGet = repo.getEvents.bind(repo);
+    let release!: () => void;
+    let reading!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    repo.getEvents = async (id, after) => {
+      const events = await originalGet(id, after);
+      if (id === session.id) {
+        reading();
+        await gate;
+      }
+      return events;
+    };
+    const abort = new AbortController();
+    try {
+      const response = await fetch(`${base}/api/sessions/${session.id}/events`, {
+        headers: { Cookie: session.cookie },
+        signal: abort.signal,
+      });
+      await entered;
+      expect(
+        (await request(`/api/sessions/${session.id}`, { method: 'DELETE', cookie: session.cookie })).response
+          .status,
+      ).toBe(204);
+      release();
+      const timeout = setTimeout(() => abort.abort(), 3000);
+      try {
+        expect((await response.body!.getReader().read()).done).toBe(true);
+      } finally {
+        clearTimeout(timeout);
+      }
+    } finally {
+      release();
+      repo.getEvents = originalGet;
+      abort.abort();
+    }
   });
 
   it('streams actual diagnostic tool/retrieval/outcome events and replays only events after a cursor', async () => {

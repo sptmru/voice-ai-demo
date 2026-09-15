@@ -82,12 +82,14 @@ export function attachVoiceBridge({
         'SELECT 1 FROM api_session_owners WHERE session_id=$1 AND owner_hash=$2',
         [match[1], createHash('sha256').update(token).digest('hex')],
       );
-      if (!ownership.rowCount || (await repo.getSession(match[1])).status !== 'active')
-        throw new Error('Voice session not found');
+      if (!ownership.rowCount) throw new Error('Voice session not found');
       if (voiceActive.has(match[1]) || isSessionBusy?.(match[1]) || sockets.size >= 4)
         throw new Error('Voice connection limit reached or session busy');
       voiceActive.add(match[1]);
       try {
+        // Reserve voice before this await. Deletion checks the same reservation;
+        // re-reading afterwards also rejects an ownership query that raced deletion.
+        if ((await repo.getSession(match[1])).status !== 'active') throw new Error('Voice session not found');
         wss.handleUpgrade(request, socket, head, (ws) => {
           sockets.set(match[1], ws);
           void handleSession(ws, match[1]);

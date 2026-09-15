@@ -48,6 +48,7 @@ function fixture() {
       return session;
     },
     listSessions: async () => [...sessions.values()],
+    deleteSession: async (id) => sessions.delete(id),
     updateSession: async (id, patch) => {
       Object.assign(await repo.getSession(id), patch);
     },
@@ -139,6 +140,7 @@ function fixture() {
     ]),
     ingest: vi.fn(),
     listDocuments: async () => [],
+    deleteDocument: async () => false,
   };
   return {
     repo,

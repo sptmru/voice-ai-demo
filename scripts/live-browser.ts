@@ -44,7 +44,6 @@ page.on('websocket', (socket) => {
 try {
   await page.goto(base);
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
-  await page.getByRole('button', { name: 'Connect voice', exact: true }).click();
   await page.getByRole('button', { name: 'Disconnect voice', exact: true }).waitFor({ timeout: 30000 });
   console.log('Browser microphone and Gemini connection ready');
   await page

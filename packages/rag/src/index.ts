@@ -26,6 +26,12 @@ export class RagService implements RetrievalService {
     return rows.map(mapDocument);
   }
 
+  async deleteDocument(id: string): Promise<boolean> {
+    // The foreign key removes every chunk and its embedding in this statement.
+    const result = await this.database.query('DELETE FROM knowledge_documents WHERE id=$1', [id]);
+    return Boolean(result.rowCount);
+  }
+
   async ingest(input: {
     title: string;
     content: string;

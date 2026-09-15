@@ -4,7 +4,7 @@
 
 “This is Relay, a fictional telecom provider. The left column is the conversation. The middle is a record of observable actions. The right is the evidence and support case.”
 
-Choose **UK carrier incident** and **Start session**. For a fully local rehearsal, use the suggested text prompt. For a live demonstration, configure Gemini first and click **Connect voice**.
+Choose **UK carrier incident** and **Start session**. With Gemini configured, the session immediately requests microphone access and connects voice. For a fully local rehearsal, leave provider keys unset or disconnect voice and use the suggested text prompt.
 
 ## 0:20 — Report the issue
 
@@ -19,6 +19,8 @@ The agent correlates repeated UK failures with healthy account configuration and
 ## 1:45 — Make RAG tangible
 
 Open **Knowledge base**. Upload a short Markdown document with a unique diagnostic phrase. Search that phrase immediately and expand the matching chunk. The UI uses the same retrieval service as the agent.
+
+Optionally remove that test document with its trash button and confirm deletion; its passages disappear from search. Session-history rows also have a delete action with confirmation.
 
 ## 2:10 — Show a guarded action
 

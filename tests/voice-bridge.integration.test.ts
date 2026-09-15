@@ -89,6 +89,7 @@ describe.skipIf(!databaseUrl)(
         throw new Error('Not used by bridge tests');
       },
       listDocuments: async () => [],
+      deleteDocument: async () => false,
     };
     const fixtures: Array<Awaited<ReturnType<typeof launch>>> = [];
     let app: Awaited<ReturnType<typeof launch>>;
@@ -209,6 +210,44 @@ describe.skipIf(!databaseUrl)(
       expect(app.voiceActive.has(alice.id)).toBe(false);
       const valid = await connected(alice);
       await valid.stop();
+    });
+
+    it('reserves an in-flight upgrade against deletion and refuses deleted sessions', async () => {
+      const session = await start();
+      const gate = deferred();
+      const entered = deferred();
+      const originalGet = repo.getSession.bind(repo);
+      const read = vi.spyOn(repo, 'getSession').mockImplementation(async (id) => {
+        if (id === session.id) {
+          entered.release();
+          await gate.promise;
+        }
+        return originalGet(id);
+      });
+      const wire = socket(session);
+      const remove = () =>
+        fetch(`${app.base}/api/sessions/${session.id}`, {
+          method: 'DELETE',
+          headers: { Cookie: session.cookie },
+        });
+      try {
+        await entered.promise;
+        expect(app.voiceActive.has(session.id)).toBe(true);
+        expect((await remove()).status).toBe(409);
+        gate.release();
+        await wire.opened;
+        expect((await remove()).status).toBe(409);
+      } finally {
+        gate.release();
+        read.mockRestore();
+        await wire.opened;
+        await wire.stop();
+      }
+      expect((await remove()).status).toBe(204);
+      const rejected = socket(session);
+      await expect(rejected.opened).rejects.toThrow('403');
+      await rejected.closed;
+      expect(app.voiceActive.has(session.id)).toBe(false);
     });
 
     it('returns a clear missing-key error through the real default-provider path and releases ownership', async () => {

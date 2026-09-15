@@ -86,7 +86,7 @@ export class PostgresRepository implements Repository {
 
   async getSession(id: string): Promise<SupportSession> {
     const { rows } = await this.database.query('SELECT * FROM support_sessions WHERE id=$1', [id]);
-    if (!rows[0]) throw new Error('Session not found');
+    if (!rows[0]) throw Object.assign(new Error('Session not found'), { status: 404 });
     return sessionFromRow(rows[0]);
   }
 
@@ -96,6 +96,31 @@ export class PostgresRepository implements Repository {
       [allowedIds ?? null],
     );
     return rows.map(sessionFromRow);
+  }
+
+  async deleteSession(id: string): Promise<boolean> {
+    const client = await this.database.connect();
+    try {
+      await client.query('BEGIN');
+      // Lock the parent first: concurrent writes referencing this session cannot
+      // insert memory between the explicit cleanup and the cascading deletion.
+      const session = await client.query('SELECT id FROM support_sessions WHERE id=$1 FOR UPDATE', [id]);
+      if (!session.rowCount) {
+        await client.query('COMMIT');
+        return false;
+      }
+      await client.query('DELETE FROM customer_memory WHERE source_session_id=$1', [id]);
+      await client.query('DELETE FROM api_session_owners WHERE session_id=$1', [id]);
+      // Events, tickets, actions and confirmations already use ON DELETE CASCADE.
+      await client.query('DELETE FROM support_sessions WHERE id=$1', [id]);
+      await client.query('COMMIT');
+      return true;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async updateSession(id: string, patch: Parameters<Repository['updateSession']>[1]): Promise<void> {

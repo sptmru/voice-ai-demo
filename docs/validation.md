@@ -37,13 +37,13 @@ Verified at **2026-09-15T09:16:06.513Z**, with the same real Gemini model:
 
 Final checks on 2026-09-15:
 
-| Command                          | Result                                                                            |
-| -------------------------------- | --------------------------------------------------------------------------------- |
-| `corepack pnpm typecheck`        | Passed                                                                            |
-| `corepack pnpm test`             | 53 passed: core, Gemini, OpenAI, parsers and database configuration               |
-| `corepack pnpm test:integration` | 36 passed against isolated PostgreSQL schemas and real cached embeddings          |
-| `corepack pnpm test:e2e`         | 4 passed: main case/history/report, mobile sensitive confirmation, search, upload |
-| `corepack pnpm build`            | Passed, production Next.js output                                                 |
+| Command                          | Result                                                                                |
+| -------------------------------- | ------------------------------------------------------------------------------------- |
+| `corepack pnpm typecheck`        | Passed                                                                                |
+| `corepack pnpm test`             | 55 passed: core, providers, browser voice cleanup, parsers and database configuration |
+| `corepack pnpm test:integration` | 42 passed against isolated PostgreSQL schemas and real cached embeddings              |
+| `corepack pnpm test:e2e`         | 7 passed: support workflows, deletion, automatic voice startup and microphone denial  |
+| `corepack pnpm build`            | Passed, production Next.js output                                                     |
 
 Integration coverage includes both provider adapters running the same support scenario through the real executor, PostgreSQL and retrieval, with upstream provider transports simulated. It also covers owner isolation, atomic confirmations, redaction, upload limits, SSE replay ordering and voice bridge lifecycle. Browser screenshots: `test-results/m1-desktop.png` and `test-results/m1-mobile.png`.
 
@@ -54,6 +54,14 @@ The `relay-voice-support:local` image built successfully. `docker run --rm --net
 Isolated web/API containers on ports 3110/3111 were then checked through the production Next.js rewrite. The page and health route returned HTTP 200; the actual PostgreSQL/ONNX retrieval workflow created session `c67c0f0d-833a-4652-8bc1-c130046db5d4`, ticket **`TKT-4D644DAF`**, 30 events and a validated unresolved carrier-incident outcome. End session succeeded. The smoke containers used the existing demo database and cached model, then were removed. This validates a local production-image launch; it is not an external deployment or a fresh-model-download check inside the container.
 
 ## Boundaries
+
+### Deletion and automatic voice follow-up (2026-09-15)
+
+Added confirmed document/session deletion and automatic voice startup on new/reset sessions. Session deletion removes owned session data, local tickets/actions/confirmations and source-linked memory transactionally; database chunks cascade on document deletion. Active tool/voice operations return 409, and deletion races with SSE replay and WebSocket upgrade are covered. Browser start requests microphone permission immediately, connects with the newly returned session ID, and preserves the text session if microphone permission fails. Closing startup cancels its pending promise and repeated close calls await the same shutdown.
+
+Verified with **55 unit tests, 42 integration tests and 7 Chromium tests**, plus type checking and production build. Integration/browser deletions used the separate `relay-feature-review` Compose project and synthetic fixtures, never existing user sessions or documents. Voice browser tests exercised actual browser microphone setup/AudioWorklet against an intercepted test WebSocket; no billed provider connection or public data-bearing browser test was used. Tests cover document cancellation/deletion/search cleanup, session cancellation/409/retry/current-view cleanup, auto-connect/reset with correct session IDs, microphone denial/text fallback, startup cancellation and late microphone cleanup. Dialog screenshots: `test-results/delete-document.png`, `test-results/delete-session-mobile.png`.
+
+The final image was applied to `relay-voice-demo` on port 3477. Local and public `/api/health` checks returned 200; the temporary review stack and its fixture volumes were removed. No user records were deleted during deployment, and no database migration or seed rerun was needed.
 
 ### Configurable application port follow-up (2026-09-15)
 

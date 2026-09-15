@@ -32,6 +32,7 @@ import {
   Upload,
   Sparkles,
   Ticket,
+  Trash2,
   Wrench,
   X,
   Zap,
@@ -76,7 +77,65 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || `Request failed (${response.status})`);
   }
-  return response.json();
+  return response.status === 204 ? (undefined as T) : response.json();
+}
+type DeleteTarget = { kind: 'document' | 'session'; id: string; title: string };
+
+function DeleteDialog({
+  target,
+  busy,
+  error,
+  onCancel,
+  onDelete,
+}: {
+  target: DeleteTarget;
+  busy: boolean;
+  error: string;
+  onCancel: () => void;
+  onDelete: () => void;
+}) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    dialog.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={dialog}
+      className="delete-dialog"
+      aria-labelledby="delete-title"
+      aria-describedby="delete-description"
+      onCancel={(event) => {
+        event.preventDefault();
+        if (!busy) onCancel();
+      }}
+    >
+      <span className="delete-symbol">
+        <Trash2 size={24} />
+      </span>
+      <h2 id="delete-title">Delete {target.kind === 'document' ? 'document' : 'session'}?</h2>
+      <p className="delete-name">{target.title}</p>
+      <p id="delete-description">
+        {target.kind === 'document'
+          ? 'This removes the document and its searchable passages for everyone using this demo. Existing session transcripts keep their historical citations.'
+          : 'This disconnects its voice call and permanently removes the session, events, tickets, actions and saved memory from this conversation.'}{' '}
+        This cannot be undone.
+      </p>
+      {error && (
+        <p className="delete-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="dialog-actions">
+        <button className="button outline" autoFocus disabled={busy} onClick={onCancel}>
+          Cancel
+        </button>
+        <button className="button danger" disabled={busy} onClick={onDelete}>
+          {busy ? <LoaderCircle size={15} className="spin" /> : <Trash2 size={15} />}
+          {busy ? 'Deleting…' : `Delete ${target.kind}`}
+        </button>
+      </div>
+    </dialog>
+  );
 }
 const post = (body: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body) });
 const textValue = (value: unknown): string =>
@@ -213,6 +272,11 @@ export default function Home() {
   const [voiceProvider, setVoiceProvider] = useState<'gemini' | 'openai'>('gemini');
   const [muted, setMuted] = useState(false);
   const [partialTranscript, setPartialTranscript] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+  const operationRef = useRef(false);
+  const activeSessionRef = useRef<string | undefined>(undefined);
   const voiceRef = useRef<BrowserVoiceClient | null>(null);
   const voiceConnected = voiceState === 'connected';
   const voiceBusy = ['requesting-microphone', 'connecting'].includes(voiceState);
@@ -231,7 +295,7 @@ export default function Home() {
   const refresh = useCallback(async (id: string) => {
     const version = ++refreshVersion.current;
     const value = await api<Detail>(`/sessions/${id}`);
-    if (version === refreshVersion.current) setDetail(value);
+    if (version === refreshVersion.current && activeSessionRef.current === id) setDetail(value);
     return value;
   }, []);
 
@@ -250,11 +314,17 @@ export default function Home() {
     if (!sessionId) return;
     const source = new EventSource(`/api/sessions/${sessionId}/events`);
     source.onopen = () => {
+      if (activeSessionRef.current !== sessionId) return;
       setConnection('live');
-      void refresh(sessionId).catch((e) => setError(e.message));
+      void refresh(sessionId).catch((e) => {
+        if (activeSessionRef.current === sessionId) setError(e.message);
+      });
     };
-    source.onerror = () => setConnection('reconnecting');
+    source.onerror = () => {
+      if (activeSessionRef.current === sessionId) setConnection('reconnecting');
+    };
     source.addEventListener('agent', (event) => {
+      if (activeSessionRef.current !== sessionId) return;
       const data = JSON.parse((event as MessageEvent).data) as AgentEvent;
       setEvents((old) =>
         old.some((item) => item.id === data.id) ? old : [...old, data].sort((a, b) => a.id - b.id),
@@ -281,7 +351,9 @@ export default function Home() {
             'reset_trunk_credentials',
           ].includes(String(data.payload.name)))
       )
-        void refresh(sessionId).catch((e) => setError(e.message));
+        void refresh(sessionId).catch((e) => {
+          if (activeSessionRef.current === sessionId) setError(e.message);
+        });
     });
     return () => {
       source.close();
@@ -314,6 +386,8 @@ export default function Home() {
   }, [events.length]);
 
   async function run(action: () => Promise<void>) {
+    if (operationRef.current) return;
+    operationRef.current = true;
     setBusy(true);
     setError('');
     try {
@@ -321,24 +395,41 @@ export default function Home() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Something went wrong');
     } finally {
+      operationRef.current = false;
       setBusy(false);
     }
   }
   async function start() {
     await run(async () => {
-      await voiceRef.current?.close();
+      const previousVoice = voiceRef.current;
       voiceRef.current = null;
       setVoiceState('idle');
-      if (sessionId && !finished) await api(`/sessions/${sessionId}/end`, post({}));
-      const { session } = await api<{ session: SupportSession }>('/sessions', post({ scenarioId: scenario }));
-      followActivity.current = true;
-      setEvents([]);
-      await refresh(session.id);
-      setTab('workspace');
+      const client = config?.providers[voiceProvider]?.configured ? createVoiceClient() : undefined;
+      // Request permission/unlock audio within the click; no provider connection until the session exists.
+      if (client) void client.prepare().catch(() => {});
+      try {
+        await previousVoice?.close();
+        if (sessionId && !finished) await api(`/sessions/${sessionId}/end`, post({}));
+        const { session } = await api<{ session: SupportSession }>(
+          '/sessions',
+          post({ scenarioId: scenario }),
+        );
+        activeSessionRef.current = session.id;
+        followActivity.current = true;
+        setEvents([]);
+        setInput('');
+        setPartialTranscript('');
+        await refresh(session.id);
+        setTab('workspace');
+        if (client) await connectVoice(session.id, client);
+      } catch (error) {
+        await client?.close();
+        throw error;
+      }
     });
   }
   async function send(text: string) {
-    if (!sessionId || !text.trim() || busy || finished) return;
+    if (!sessionId || !text.trim() || busy || voiceBusy || finished) return;
     setInput('');
     if (voiceConnected) {
       voiceRef.current?.sendText(text);
@@ -393,14 +484,17 @@ export default function Home() {
       return;
     }
     if (!sessionId || finished) return;
+    await connectVoice(sessionId);
+  }
+  function createVoiceClient() {
     setError('');
     setMuted(false);
     setPartialTranscript('');
-    const base = config?.voiceUrl || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
     const client = new BrowserVoiceClient({
-      url: `${base.replace(/\/$/, '')}/api/sessions/${sessionId}/voice`,
+      url: '',
       provider: voiceProvider,
       onEvent: (event) => {
+        if (voiceRef.current !== client) return;
         if (event.type === 'state')
           setVoiceState(event.state === 'ready' ? 'connected' : String(event.state));
         if (event.type === 'error') {
@@ -415,11 +509,75 @@ export default function Home() {
       },
     });
     voiceRef.current = client;
+    return client;
+  }
+  async function connectVoice(id: string, client = createVoiceClient()) {
+    const base = config?.voiceUrl || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
     try {
-      await client.start();
+      await client.start(`${base.replace(/\/$/, '')}/api/sessions/${id}/voice`);
     } catch (e) {
+      if (voiceRef.current !== client) return;
       setVoiceState('error');
-      setError(e instanceof Error ? e.message : 'Voice failed');
+      setError(`${e instanceof Error ? e.message : 'Voice failed'}. You can reconnect or continue in text.`);
+    }
+  }
+  async function openSession(id: string) {
+    await run(async () => {
+      await voiceRef.current?.close();
+      voiceRef.current = null;
+      setVoiceState('idle');
+      setPartialTranscript('');
+      activeSessionRef.current = id;
+      const d = await refresh(id);
+      setEvents(d.events);
+      setScenario(d.session.scenarioId);
+      setTab('workspace');
+    });
+  }
+  function requestDelete(target: DeleteTarget) {
+    setDeleteError('');
+    setDeleteTarget(target);
+  }
+  async function deleteItem() {
+    if (!deleteTarget || deleting || operationRef.current) return;
+    const target = deleteTarget;
+    setDeleting(true);
+    setDeleteError('');
+    try {
+      if (target.kind === 'session' && target.id === activeSessionRef.current) {
+        await voiceRef.current?.close();
+        voiceRef.current = null;
+      }
+      await api(`/${target.kind === 'document' ? 'knowledge' : 'sessions'}/${target.id}`, {
+        method: 'DELETE',
+      });
+      if (target.kind === 'document') {
+        setDocuments((old) => old.filter((doc) => doc.id !== target.id));
+        setSearchResults((old) => old.filter((chunk) => chunk.documentId !== target.id));
+        setUploadStatus('');
+      } else {
+        setSessions((old) => old.filter((session) => session.id !== target.id));
+        if (activeSessionRef.current === target.id) {
+          activeSessionRef.current = undefined;
+          ++refreshVersion.current;
+          setDetail(undefined);
+          setEvents([]);
+          setInput('');
+          setSeconds(0);
+          setVoiceState('idle');
+          setPartialTranscript('');
+        } else {
+          setDetail(
+            (old) =>
+              old && { ...old, memory: old.memory.filter((item) => item.sourceSessionId !== target.id) },
+          );
+        }
+      }
+      setDeleteTarget(null);
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : 'Deletion failed');
+    } finally {
+      setDeleting(false);
     }
   }
   async function showTab(value: typeof tab) {
@@ -573,7 +731,8 @@ export default function Home() {
               </div>
               <div className="scenario-actions">
                 <span className="policy-chip">
-                  <span className="dot" /> Local diagnostic policy
+                  <span className="dot" />{' '}
+                  {config?.providers[voiceProvider]?.configured ? 'Voice on start' : 'Text session'}
                 </span>
                 <button className="button outline" onClick={() => void start()} disabled={busy || !config}>
                   {sessionId ? <RotateCcw size={14} /> : <Plus size={14} />}
@@ -740,7 +899,8 @@ export default function Home() {
                   {partialTranscript && <p className="partial-transcript">{partialTranscript}</p>}
                   {busy && sessionId && (
                     <div className="working-indicator">
-                      <LoaderCircle size={14} className="spin" /> Checking the evidence…
+                      <LoaderCircle size={14} className="spin" />{' '}
+                      {voiceBusy ? 'Connecting voice…' : 'Checking the evidence…'}
                     </div>
                   )}
                   <div ref={transcriptEnd} />
@@ -1273,6 +1433,15 @@ export default function Home() {
             <div className="document-grid">
               {documents.map((doc) => (
                 <article className="document-card" key={doc.id}>
+                  <button
+                    className="delete-button document-delete"
+                    disabled={busy || uploading}
+                    aria-label={`Delete document ${doc.title}`}
+                    title="Delete document"
+                    onClick={() => requestDelete({ kind: 'document', id: doc.id, title: doc.title })}
+                  >
+                    <Trash2 size={17} />
+                  </button>
                   <span className="document-icon">
                     <FileText size={22} />
                   </span>
@@ -1286,6 +1455,11 @@ export default function Home() {
                   </div>
                 </article>
               ))}
+              {!documents.length && (
+                <p className="empty-documents">
+                  No documents yet. Upload a document to give your agent knowledge to search.
+                </p>
+              )}
             </div>
           </section>
         )}
@@ -1302,36 +1476,51 @@ export default function Home() {
               </div>
             ) : (
               sessions.map((s) => (
-                <button
-                  className="history-row"
-                  key={s.id}
-                  onClick={() =>
-                    void run(async () => {
-                      const d = await refresh(s.id);
-                      setEvents(d.events);
-                      setScenario(s.scenarioId);
-                      setTab('workspace');
-                    })
-                  }
-                >
-                  <span className="history-icon">
-                    <MessageSquare size={20} />
-                  </span>
-                  <div>
-                    <strong>
-                      {s.outcome?.issue ||
-                        config?.scenarios.find((c) => c.id === s.scenarioId)?.label ||
-                        s.scenarioId}
-                    </strong>
-                    <p>{s.diagnosis || 'Investigation in progress'}</p>
-                  </div>
-                  <span className="status-pill">{s.status}</span>
-                  <time>{new Date(s.createdAt).toLocaleString()}</time>
-                  <ChevronRight size={18} />
-                </button>
+                <article className="history-entry" key={s.id}>
+                  <button className="history-row" disabled={busy} onClick={() => void openSession(s.id)}>
+                    <span className="history-icon">
+                      <MessageSquare size={20} />
+                    </span>
+                    <div>
+                      <strong>
+                        {s.outcome?.issue ||
+                          config?.scenarios.find((c) => c.id === s.scenarioId)?.label ||
+                          s.scenarioId}
+                      </strong>
+                      <p>{s.diagnosis || 'Investigation in progress'}</p>
+                    </div>
+                    <span className="status-pill">{s.status}</span>
+                    <time>{new Date(s.createdAt).toLocaleString()}</time>
+                    <ChevronRight size={18} />
+                  </button>
+                  <button
+                    className="delete-button session-delete"
+                    disabled={busy}
+                    aria-label={`Delete session ${s.id.slice(0, 8)}`}
+                    title="Delete session"
+                    onClick={() =>
+                      requestDelete({
+                        kind: 'session',
+                        id: s.id,
+                        title: `${s.outcome?.issue || config?.scenarios.find((c) => c.id === s.scenarioId)?.label || s.scenarioId} · ${new Date(s.createdAt).toLocaleString()}`,
+                      })
+                    }
+                  >
+                    <Trash2 size={17} />
+                  </button>
+                </article>
               ))
             )}
           </section>
+        )}
+        {deleteTarget && (
+          <DeleteDialog
+            target={deleteTarget}
+            busy={deleting}
+            error={deleteError}
+            onCancel={() => setDeleteTarget(null)}
+            onDelete={() => void deleteItem()}
+          />
         )}
         <footer className="page-footer">
           <span>

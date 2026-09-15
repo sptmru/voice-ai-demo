@@ -91,6 +91,50 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
     }[];
   }
 
+  it('deletes a shared document and every searchable chunk, while retaining other documents', async () => {
+    const deleted = await upload(
+      'delete-orbit.md',
+      '# DELETE-ORBIT-938\nThe DELETE-ORBIT-938 recovery code requires a local reboot.',
+      'text/markdown',
+    );
+    const retained = await upload(
+      'retain-orbit.md',
+      '# RETAIN-ORBIT-938\nThe retained maintenance document remains searchable.',
+      'text/markdown',
+    );
+    expect(
+      (await search('DELETE-ORBIT-938 recovery')).some(
+        (chunk) => chunk.documentId === deleted.body.document.id,
+      ),
+    ).toBe(true);
+    const path = `${base}/api/knowledge/${deleted.body.document.id}`;
+    expect(
+      (await fetch(path, { method: 'DELETE', headers: { Origin: 'https://hostile.example' } })).status,
+    ).toBe(403);
+    expect((await fetch(`${base}/api/knowledge/not-a-uuid`, { method: 'DELETE' })).status).toBe(400);
+    expect((await fetch(`${base}/api/knowledge/${randomUUID()}`, { method: 'DELETE' })).status).toBe(404);
+    expect((await fetch(path, { method: 'DELETE' })).status).toBe(204);
+    expect(
+      (
+        await database.query('SELECT id FROM knowledge_chunks WHERE document_id=$1', [
+          deleted.body.document.id,
+        ])
+      ).rowCount,
+    ).toBe(0);
+    expect((await rag.listDocuments()).some((document) => document.id === deleted.body.document.id)).toBe(
+      false,
+    );
+    expect((await rag.listDocuments()).some((document) => document.id === retained.body.document.id)).toBe(
+      true,
+    );
+    expect(
+      (await search('DELETE-ORBIT-938 recovery')).some(
+        (chunk) => chunk.documentId === deleted.body.document.id,
+      ),
+    ).toBe(false);
+    expect((await fetch(path, { method: 'DELETE' })).status).toBe(404);
+  });
+
   it('accepts Markdown, indexes it immediately and keeps identical repeated uploads stable', async () => {
     const text =
       '# ORBIT-731 troubleshooting\n## Maintenance window\nORBIT-731 is a fictional Glasgow trunk maintenance event. Support should state that service resumes at 16:35 UTC after verification.';
