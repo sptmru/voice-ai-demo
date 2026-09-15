@@ -6,8 +6,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-relay}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: ${POSTGRES_DB:-relay}
-    ports:
-      - '127.0.0.1:${DB_PORT:-55432}:5432'
+    networks:
+      - database
     volumes:
       - relay_pg:/var/lib/postgresql/data
     healthcheck:
@@ -17,3 +17,6 @@ services:
       retries: 20
 volumes:
   relay_pg:
+networks:
+  database:
+    internal: true

@@ -2,6 +2,7 @@ node_modules/
 .next/
 .next-production/
 dist/
+logs/
 .env
 .env.*
 !.env.example

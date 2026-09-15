@@ -1,7 +1,8 @@
 # Put this inside a TLS-enabled server block. Add your identity-aware access gate
 # before exposing the demo publicly. A browser ownership cookie is not login.
-location /api/ {
-    proxy_pass http://127.0.0.1:3101;
+# Replace 3100 with PORT from .env. Web forwards /api internally.
+location / {
+    proxy_pass http://127.0.0.1:3100;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header Upgrade $http_upgrade;
@@ -9,8 +10,4 @@ location /api/ {
     proxy_buffering off;
     proxy_read_timeout 950s;
     client_max_body_size 6m;
-}
-location / {
-    proxy_pass http://127.0.0.1:3100;
-    proxy_set_header Host $host;
 }

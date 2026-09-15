@@ -1,4 +1,4 @@
-# Optional fully containerized app. Start using both compose files.
+# App services. Start using both compose files; PostgreSQL has no host port.
 services:
   api:
     build: .
@@ -12,10 +12,11 @@ services:
       HOST: 0.0.0.0
       PORT: 3101
       EMBEDDING_CACHE: /app/.cache/models
-    ports:
-      - '127.0.0.1:3101:3101'
     volumes:
       - relay_models:/app/.cache/models
+    networks:
+      - default
+      - database
     depends_on:
       db:
         condition: service_healthy
@@ -38,7 +39,7 @@ services:
     environment:
       API_INTERNAL_URL: http://api:3101
     ports:
-      - '127.0.0.1:3100:3100'
+      - '127.0.0.1:${PORT:-3100}:3100'
     depends_on:
       - api
     init: true

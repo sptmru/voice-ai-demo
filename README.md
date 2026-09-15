@@ -7,19 +7,21 @@ A local portfolio demo for a fictional telecom/CPaaS provider. Investigate calls
 Requirements: Node.js **22.18+** (or newer compatible LTS), Corepack/pnpm, Docker with Compose, and approximately 2 GB free disk space for dependencies and the local model. Enable pnpm once with `corepack enable`, or use `corepack pnpm` in place of `pnpm`.
 
 ```sh
-cp .env.example .env
-docker compose up -d
-pnpm install
-pnpm db:migrate
-pnpm db:seed
-pnpm dev
+cp .env.example .env # only if .env does not already exist
+docker compose -f compose.yaml -f compose.app.yaml build api
+docker compose -f compose.yaml -f compose.app.yaml up -d db
+docker compose -f compose.yaml -f compose.app.yaml run --rm api pnpm db:migrate
+docker compose -f compose.yaml -f compose.app.yaml run --rm api pnpm db:seed
+docker compose -f compose.yaml -f compose.app.yaml up -d api web
 ```
 
-Open **http://localhost:3100**. API: `http://127.0.0.1:3101/api/health`. PostgreSQL: `127.0.0.1:55432`. Ports are deliberately separate from common 3000/3001 development servers. The first seed downloads the quantized local BGE model; subsequent runs use `.cache/models`. Model download requires network access, inference does not. Seeding is repeatable and preserves previous sessions and uploaded documents.
+Open **http://localhost:3100** with the example `.env`, or `http://localhost:<PORT>` for your configured port. `PORT` selects the single host port for web, `/api`, SSE and voice; health is `/api/health` on that same address. API and PostgreSQL have **no published host ports**: Next.js reaches `api:3101`, and API reaches `db:5432` on the internal `database` Docker network. Web belongs to the separate default network; API joins both. The first seed downloads the quantized local BGE model; subsequent container runs use the `relay_models` volume. Model download requires network access, inference does not. Seeding is repeatable and preserves previous sessions and uploaded documents.
+
+Database commands and integration tests run inside the API container. Host-only `pnpm dev` / `pnpm dev:api` require a separately accessible database via `DATABASE_URL`; they cannot connect to this private Docker database by localhost. A host frontend also needs an explicitly reachable `API_INTERNAL_URL`; the Compose API is internal by default.
 
 Database credentials live once in `.env`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`. Compose and host commands use these same values; `DB_HOST`/`DB_PORT` select the connection address. The application encodes password characters when building its connection URL. Keep passwords containing `$` or `#` single-quoted in `.env` so Compose treats them literally. An optional `DATABASE_URL` overrides these fields for host processes; the containerized API always uses the shared `POSTGRES_*` values and internal `db:5432` address. Changing `.env` does not rotate an already initialized PostgreSQL role's password; see [database configuration](docs/deployment.md#database-configuration).
 
-For a public demo through Cloudflare, see [Tunnel setup](docs/deployment.md#cloudflare-tunnel): one named-tunnel route to web port **3100** carries HTTP, SSE and voice WebSocket traffic.
+For a public demo through Cloudflare, see [Tunnel setup](docs/deployment.md#cloudflare-tunnel): point the host-side tunnel to `http://127.0.0.1:<PORT>`. Changing `PORT` requires `docker compose -f compose.yaml -f compose.app.yaml up -d`; `restart` does not update port mappings. For direct local browser use also set `WEB_ORIGIN=http://localhost:<PORT>`; an HTTPS public origin does not change when only the local tunnel target port changes.
 
 Select **UK carrier incident → Start session → Try…**. The agent runs real local tools, retrieves four knowledge chunks, finds the incident, opens a persisted ticket, and records a validated outcome. **End session** produces the after-call view and saves selective customer memory. **Session history** reopens the full record from the same browser.
 
@@ -48,10 +50,10 @@ The agent never exposes private model reasoning. Retrieved content is evidence, 
 ```sh
 pnpm typecheck
 pnpm test
-# Requires the local PostgreSQL container; creates and removes isolated test schemas.
-pnpm test:integration
+# Uses the internal database network; creates and removes isolated test schemas.
+docker compose -f compose.yaml -f compose.app.yaml exec api pnpm test:integration
 pnpm exec playwright install chromium
-# With pnpm dev running:
+# With the application running:
 pnpm test:e2e
 pnpm build
 ```
