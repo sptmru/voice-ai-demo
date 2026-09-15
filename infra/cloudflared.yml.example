@@ -1,0 +1,8 @@
+# Locally managed named tunnel; replace these values with your tunnel and hostname.
+# If cloudflared runs on the host, one route carries HTTP, SSE and voice WebSocket.
+tunnel: YOUR_TUNNEL_UUID
+credentials-file: /path/to/YOUR_TUNNEL_UUID.json
+ingress:
+  - hostname: relay.example.com
+    service: http://127.0.0.1:3100
+  - service: http_status:404

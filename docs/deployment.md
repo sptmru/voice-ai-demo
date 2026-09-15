@@ -2,15 +2,49 @@
 
 ## Local development
 
-Use the README commands. Keep API and web ports on `3101` and `3100`, PostgreSQL on `55432`. The web origin must match `WEB_ORIGIN` exactly; the default is `http://localhost:3100`, so use that URL rather than switching to `127.0.0.1` in the browser. A comma-separated origin list is supported when needed. The ownership cookie is host-scoped and HttpOnly, so the WebSocket connection to the API port keeps the same identity.
+Use the README commands. Keep API and web ports on `3101` and `3100`, PostgreSQL on `55432`. The web origin must match `WEB_ORIGIN` exactly; the default is `http://localhost:3100`, so use that URL rather than switching to `127.0.0.1` in the browser. A comma-separated origin list is supported when needed. HTTP, SSE and voice WebSocket requests use the page's origin; Next.js proxies `/api/*` to the API, preserving the host-scoped HttpOnly ownership cookie.
 
 On a remote development host use SSH forwarding:
 
 ```sh
-ssh -L 3100:127.0.0.1:3100 -L 3101:127.0.0.1:3101 your-dev-host
+ssh -L 3100:127.0.0.1:3100 your-dev-host
 ```
 
 Then open `http://localhost:3100` locally. Browsers allow microphone capture on localhost; public hostnames need HTTPS.
+
+## Database configuration
+
+Set these once in `.env`:
+
+```dotenv
+POSTGRES_USER=relay
+POSTGRES_PASSWORD='your-password'
+POSTGRES_DB=relay
+DB_HOST=127.0.0.1
+DB_PORT=55432
+```
+
+Compose automatically reads `.env`. Its database service requires a nonempty `POSTGRES_PASSWORD`; no password is embedded in either Compose file. API, migrations, seed and integration tests build their connection URL from the same values, encoding reserved characters. Single-quote passwords containing `$` or `#` to preserve them in Compose. Do not use `${POSTGRES_PASSWORD}` inside `DATABASE_URL`: Node's env-file loader does not expand that syntax. An explicit `DATABASE_URL` remains available for an external database in host processes. Compose overrides it with an empty value and selects the local database through `DB_HOST=db`, `DB_PORT=5432`.
+
+For a fresh database, choose the password before the first `docker compose up`. For an existing volume, changing `.env` alone **does not change the stored role password** ([Postgres image documentation](https://github.com/docker-library/docs/blob/master/postgres/content.md)). To rotate it without deleting data, open `docker compose exec db sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'`, use interactive `\password`, enter the new password, then put the same value in `.env` and restart the API/recreate Compose services. Do not remove the database volume to apply a password change.
+
+## Cloudflare Tunnel
+
+A **named tunnel with a stable hostname** can route the whole app to `http://127.0.0.1:3100` when `cloudflared` runs on this host. Next.js forwards `/api/*`, including WebSocket upgrades and SSE, to port 3101. No public API port or second hostname is needed. When `cloudflared` runs as a container on the Compose network, the service URL is `http://web:3100`; `localhost` inside that container is not the host.
+
+For example, create a published application route for `relay.example.com` → `http://127.0.0.1:3100`. Set:
+
+```dotenv
+WEB_ORIGIN=https://relay.example.com
+COOKIE_SECURE=true
+# Leave VOICE_PUBLIC_URL unset: the browser uses wss://relay.example.com automatically.
+```
+
+Replace the example hostname with yours and restart the API. If using Compose, recreate it with `docker compose -f compose.yaml -f compose.app.yaml up -d api web` after rebuilding when code changed. Prefer the production web build for a shared demo. TLS terminates at Cloudflare, so the local service URL remains HTTP. Add Cloudflare Access for the intended audience; the browser ownership cookie is session isolation, not login.
+
+Optional locally managed configuration is in [infra/cloudflared.yml.example](../infra/cloudflared.yml.example). A direct routing alternative is to send `^/api(/.*)?$` to 3101 and all other paths to 3100, under the same hostname. Cloudflare evaluates ingress rules in order, and the final rule must be a catch-all ([routing configuration](https://developers.cloudflare.com/tunnel/features/locally-managed-tunnels/configuration-file/)).
+
+Avoid `cloudflared tunnel --url ...` Quick Tunnels for this app: they **do not support SSE**, which drives the live dashboard ([Cloudflare limitation](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)). Local HTTP/SSE/WebSocket proxy checks do not prove an external Cloudflare deployment; after publishing, verify `/api/health`, live timeline updates and microphone connection on the HTTPS hostname.
 
 ## Optional Docker app
 

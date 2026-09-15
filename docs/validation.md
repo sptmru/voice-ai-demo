@@ -40,7 +40,7 @@ Final checks on 2026-09-15:
 | Command                          | Result                                                                            |
 | -------------------------------- | --------------------------------------------------------------------------------- |
 | `corepack pnpm typecheck`        | Passed                                                                            |
-| `corepack pnpm test`             | 50 passed: core, Gemini, OpenAI, parsers                                          |
+| `corepack pnpm test`             | 53 passed: core, Gemini, OpenAI, parsers and database configuration               |
 | `corepack pnpm test:integration` | 36 passed against isolated PostgreSQL schemas and real cached embeddings          |
 | `corepack pnpm test:e2e`         | 4 passed: main case/history/report, mobile sensitive confirmation, search, upload |
 | `corepack pnpm build`            | Passed, production Next.js output                                                 |
@@ -54,6 +54,8 @@ The `relay-voice-support:local` image built successfully. `docker run --rm --net
 Isolated web/API containers on ports 3110/3111 were then checked through the production Next.js rewrite. The page and health route returned HTTP 200; the actual PostgreSQL/ONNX retrieval workflow created session `c67c0f0d-833a-4652-8bc1-c130046db5d4`, ticket **`TKT-4D644DAF`**, 30 events and a validated unresolved carrier-incident outcome. End session succeeded. The smoke containers used the existing demo database and cached model, then were removed. This validates a local production-image launch; it is not an external deployment or a fresh-model-download check inside the container.
 
 ## Boundaries
+
+Configuration follow-up on 2026-09-15: database credentials now come from shared `.env` fields; Compose interpolation was checked without printing secrets. Type checking, all 53 unit tests and all 36 integration tests passed. A fresh production web build passed outside the sandbox after its sandboxed validation worker exited without a diagnostic. HTTP session creation, authenticated voice WebSocket upgrade, live SSE delivery and session end were verified through a single web port in both dev (3100) and production (temporary 3110). No provider call or external Cloudflare tunnel was opened for these transport checks. The 4 browser scenario results above are from the initial implementation run.
 
 - No production deployment or external telecom, CRM, email, callback or paging integration was performed.
 - Local synthetic-microphone checks cannot prove physical echo cancellation or real-device audio quality.

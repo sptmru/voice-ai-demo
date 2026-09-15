@@ -18,6 +18,8 @@ OPENAI_REALTIME_MODEL=gpt-realtime
 
 The text diagnostic policy uses no model API. Gemini requires model access and available quota; free-tier availability is account-dependent, not a guarantee of unlimited free voice. OpenAI requires its own API account/billing. No external model is required for embeddings.
 
+The browser's voice WebSocket uses the page's hostname and port by default; Next.js forwards it to the API. A single forwarded port or named Cloudflare Tunnel route to web port 3100 carries HTTP, SSE and voice. For HTTPS set `WEB_ORIGIN` to the exact public origin and `COOKIE_SECURE=true`; leave `VOICE_PUBLIC_URL` unset unless overriding the voice proxy origin. See [Tunnel setup](deployment.md#cloudflare-tunnel).
+
 ## Transport differences
 
 | Capability       | Gemini Live                                                                                            | OpenAI Realtime                                                                                        |

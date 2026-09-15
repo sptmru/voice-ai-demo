@@ -5,7 +5,10 @@ services:
     image: relay-voice-support:local
     env_file: .env
     environment:
-      DATABASE_URL: postgresql://relay:relay_local@db:5432/relay
+      # Use the same POSTGRES_* values as db; override any host-only URL from .env.
+      DATABASE_URL: ''
+      DB_HOST: db
+      DB_PORT: 5432
       HOST: 0.0.0.0
       PORT: 3101
       EMBEDDING_CACHE: /app/.cache/models

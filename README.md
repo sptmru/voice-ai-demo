@@ -17,6 +17,10 @@ pnpm dev
 
 Open **http://localhost:3100**. API: `http://127.0.0.1:3101/api/health`. PostgreSQL: `127.0.0.1:55432`. Ports are deliberately separate from common 3000/3001 development servers. The first seed downloads the quantized local BGE model; subsequent runs use `.cache/models`. Model download requires network access, inference does not. Seeding is repeatable and preserves previous sessions and uploaded documents.
 
+Database credentials live once in `.env`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`. Compose and host commands use these same values; `DB_HOST`/`DB_PORT` select the connection address. The application encodes password characters when building its connection URL. Keep passwords containing `$` or `#` single-quoted in `.env` so Compose treats them literally. An optional `DATABASE_URL` overrides these fields for host processes; the containerized API always uses the shared `POSTGRES_*` values and internal `db:5432` address. Changing `.env` does not rotate an already initialized PostgreSQL role's password; see [database configuration](docs/deployment.md#database-configuration).
+
+For a public demo through Cloudflare, see [Tunnel setup](docs/deployment.md#cloudflare-tunnel): one named-tunnel route to web port **3100** carries HTTP, SSE and voice WebSocket traffic.
+
 Select **UK carrier incident → Start session → Try…**. The agent runs real local tools, retrieves four knowledge chunks, finds the incident, opens a persisted ticket, and records a validated outcome. **End session** produces the after-call view and saves selective customer memory. **Session history** reopens the full record from the same browser.
 
 ## Voice and implemented milestones
@@ -52,7 +56,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-Verified on 2026-09-15: **50 unit tests, 36 PostgreSQL/integration tests and 4 browser tests passed**, along with type checking and the production build. Full evidence and limitations are in [validation](docs/validation.md).
+Verified on 2026-09-15: **53 unit tests, 36 PostgreSQL/integration tests and 4 browser tests passed**, along with type checking and the production build. Full evidence and limitations are in [validation](docs/validation.md).
 
 The production web build uses `.next-production`, separate from `.next` used by the dev server. Live verification scripts are documented in [providers](docs/providers.md); these make billed provider calls and are separate from automated fixture tests.
 

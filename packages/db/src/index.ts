@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { databaseUrl } from './config.js';
 import { sanitize } from '../../core/src/redaction.js';
 import type {
   AgentEvent,
@@ -14,7 +15,7 @@ import type {
 } from '../../core/src/domain.js';
 
 export const pool = new pg.Pool({
-  connectionString: process.env.DATABASE_URL ?? 'postgresql://relay:relay_local@127.0.0.1:55432/relay',
+  connectionString: databaseUrl(),
   max: 10,
   connectionTimeoutMillis: 5_000,
   idleTimeoutMillis: 30_000,

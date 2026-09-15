@@ -396,8 +396,7 @@ export default function Home() {
     setError('');
     setMuted(false);
     setPartialTranscript('');
-    const base =
-      config?.voiceUrl || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:3101`;
+    const base = config?.voiceUrl || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
     const client = new BrowserVoiceClient({
       url: `${base.replace(/\/$/, '')}/api/sessions/${sessionId}/voice`,
       provider: voiceProvider,
