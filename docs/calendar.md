@@ -46,7 +46,7 @@ next 90 days.
 
 ## Confirm the integration
 
-1. Start an appointment or lead demo. Check that calendar mode is Google Calendar.
+1. Select **Live** before starting a new repair, appointment or lead session. Check that calendar mode is Google Calendar.
    `configured: true` means required environment values are present; it does not
    claim the OAuth credentials have been tested.
 2. Request available slots. The server checks Google's
@@ -70,14 +70,23 @@ defines the event ID and notification behavior.
 
 ## Demo mode, errors, and operating limits
 
-With all four credential/calendar fields empty, availability and booking use an
-explicit `provider: demo`, `status: demo` result. Demo appointments exist only in
-API memory for availability conflict checks; the application's booking records
-are also persisted in PostgreSQL and remain in session history after restart.
-The in-memory availability reservations reset on restart. Demo bookings have no external event link. A partially
-configured integration or invalid time zone returns a configuration error;
-credentials are never silently ignored. To return to demo mode deliberately,
-clear all four fields and restart.
+New sessions default to **Rehearsal**, which uses local availability and persisted
+reservations even when all Google credentials are configured. **Live** requires a
+complete Google Calendar configuration; it never silently falls back to local
+availability. Session mode is immutable: choose a mode before starting a new
+session. Both modes can use configured external voice, text and vision models.
+
+Rehearsal appointment records and occupied slots survive API restarts in
+PostgreSQL. No external calendar link is created. A partially configured
+integration or invalid timezone fails explicitly in Live mode.
+
+Moving or cancelling an appointment requires a review card. The proposal is
+bound to the current record revision, revalidated at confirmation, and applied
+to the existing event. Rescheduling checks availability again and preserves the
+event ID; cancellation uses Google DELETE. Provider changes use event ETags when
+available, and detect an externally edited time before overwriting it. No
+attendees are notified. Once diagnosis has started, appointment changes require
+operator review and are blocked by these automated tools.
 
 Each outbound request has a 10-second timeout including response-body download.
 Expired access tokens refresh on the server, with one retry on HTTP 401. Error
@@ -85,18 +94,15 @@ responses never contain Google's response body, tokens, or client secret. An
 insert timeout is an unknown outcome: retry the **same** booking key to look up
 the deterministic event ID before attempting another insert.
 
-Bookings are serialized within one API process. Google Calendar does not offer
+Application bookings and changes are serialized with a PostgreSQL transaction lock; Google operations are also serialized within the adapter process. Google Calendar does not offer
 an atomic free/busy-check-and-book operation: an external calendar editor can
 write between the check and insertion. Run a single API instance and a dedicated
-calendar for this demo. Multiple API replicas or stronger booking guarantees
-need a shared durable reservation mechanism; external calendar writers still
-need coordination. Existing Google events survive local session deletion and
-must be cancelled in Google Calendar explicitly.
+calendar for this demo. External calendar writers still need coordination: the local reservation lock cannot serialize changes made directly in Google Calendar. Existing Google events survive local session deletion. Cancel the appointment through its confirmation card before deleting the session, or remove the event in Google Calendar.
 
 ## Verification performed during implementation
 
 `corepack pnpm exec vitest run tests/calendar.test.ts` covers OAuth refresh,
-availability filtering, event insertion, stable IDs and conflict recovery,
+availability filtering, event insertion, PATCH/DELETE, ETag conflicts, stable IDs and conflict recovery,
 redacted errors, timeouts, demo mode, concurrent booking conflicts, partial
 configuration, business-hour validation and daylight saving transitions.
 

@@ -200,6 +200,55 @@ export interface Incident {
   startedAt: string;
   description: string;
 }
+export type SessionMode = 'rehearsal' | 'live';
+export interface AppointmentRecord {
+  id: string;
+  sessionId: string;
+  serviceId: string;
+  provider: 'google' | 'demo';
+  eventId: string;
+  htmlLink?: string;
+  start: string;
+  end: string;
+  status: 'booked' | 'cancelled';
+  revision: number;
+}
+export const repairJobStatuses = [
+  'scheduled',
+  'diagnosing',
+  'awaiting_approval',
+  'in_progress',
+  'ready',
+  'completed',
+  'cancelled',
+] as const;
+export type RepairJobStatus = (typeof repairJobStatuses)[number];
+export interface RepairJob {
+  contactName?: string;
+  contactPhone?: string;
+  id: string;
+  sessionId: string;
+  customerId: string;
+  appliance: string;
+  model: string;
+  issue: string;
+  status: RepairJobStatus;
+  note: string;
+  estimateAMD?: number;
+  diagnosisCreditAMD?: number;
+  readyAt: string | null;
+  appointmentId?: string;
+  revision: number;
+  history: { status: RepairJobStatus; note: string; at: string; actor: 'system' | 'operator' | 'customer' }[];
+}
+export interface RepairJobTransition {
+  status: RepairJobStatus;
+  note: string;
+  estimateAMD?: number;
+  readyAt?: string | null;
+  expectedRevision: number;
+}
+export type AppointmentChange = { status: 'cancelled' } | { status: 'booked'; start: string; end: string };
 export interface BusinessState {
   services: { id: string; name: string; durationMinutes: number }[];
   orders: {
@@ -227,6 +276,9 @@ export interface RepairState {
   address?: string;
   region?: string;
   bookingRequested?: boolean;
+  rescheduling?: boolean;
+  contactName?: string;
+  contactPhone?: string;
   selectedJobId?: string;
   services: {
     id: string;
@@ -319,6 +371,7 @@ export interface HandoffState {
   acceptedAt?: string;
 }
 export interface SupportSession {
+  mode?: SessionMode;
   handoff?: HandoffState;
   id: string;
   customerId: string;
@@ -384,7 +437,33 @@ export interface Ticket {
 
 export interface Repository {
   getCustomer(id: string): Promise<Customer>;
-  createSession(scenario: ScenarioId): Promise<SupportSession>;
+  createSession(scenario: ScenarioId, mode?: SessionMode): Promise<SupportSession>;
+  listCalendarReservations?(provider: 'demo' | 'google'): Promise<{ start: string; end: string }[]>;
+  bookAppointment?(
+    sessionId: string,
+    requested: Pick<AppointmentRecord, 'serviceId' | 'provider' | 'start' | 'end'>,
+    create: () => Promise<Omit<AppointmentRecord, 'id' | 'sessionId' | 'revision' | 'status'>>,
+  ): Promise<AppointmentRecord>;
+  getAppointment?(sessionId: string, appointmentId?: string): Promise<AppointmentRecord | null>;
+  saveAppointment?(
+    sessionId: string,
+    input: Omit<AppointmentRecord, 'id' | 'sessionId' | 'revision' | 'status'>,
+  ): Promise<AppointmentRecord>;
+  changeAppointment?(
+    sessionId: string,
+    appointmentId: string,
+    expectedRevision: number,
+    change: AppointmentChange,
+    mutate: (record: AppointmentRecord) => Promise<void>,
+  ): Promise<AppointmentRecord>;
+  listRepairJobs?(sessionId: string): Promise<RepairJob[]>;
+  getRepairJob?(sessionId: string, jobId: string): Promise<RepairJob | null>;
+  transitionRepairJob?(
+    sessionId: string,
+    jobId: string,
+    input: RepairJobTransition,
+    actor: 'operator' | 'customer',
+  ): Promise<RepairJob>;
   getSession(id: string): Promise<SupportSession>;
   listSessions(allowedIds?: string[]): Promise<SupportSession[]>;
   deleteSession(id: string): Promise<boolean>;
@@ -430,6 +509,7 @@ export interface Repository {
   ): Promise<void>;
 }
 export interface RetrievalService {
+  warmup?(): Promise<unknown>;
   retrieve?(request: RetrievalRequest): Promise<RetrievalResult>;
   search(query: string, limit?: number): Promise<RetrievedChunk[]>;
   ingest(input: {

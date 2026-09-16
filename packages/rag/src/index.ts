@@ -17,7 +17,7 @@ import {
   resolveRetrievalQuery,
   resolveRerankingQuery,
 } from './evidence.js';
-import { rerank } from './reranking.js';
+import { rerank, warmReranker, RERANKER_ENABLED } from './reranking.js';
 export { chunkDocument, parseDocument } from './parsing.js';
 export { embed, EMBEDDING_MODEL, EMBEDDING_DIMENSIONS, EMBEDDING_SIGNATURE } from './embedding.js';
 export { RERANKER_MODEL, RERANKER_ENABLED } from './reranking.js';
@@ -41,6 +41,15 @@ const mapDocument = (row: Record<string, any>): KnowledgeDocument => ({
 });
 export class RagService implements RetrievalService {
   constructor(private readonly database: Pool) {}
+  async warmup(): Promise<{ embeddingSignature: string; reranker: 'on' | 'off'; elapsedMs: number }> {
+    const started = performance.now();
+    await Promise.all([embed('appliance repair diagnosis', true), warmReranker()]);
+    return {
+      embeddingSignature: EMBEDDING_SIGNATURE,
+      reranker: RERANKER_ENABLED ? 'on' : 'off',
+      elapsedMs: Math.round(performance.now() - started),
+    };
+  }
   async listDocuments(): Promise<KnowledgeDocument[]> {
     const { rows } = await this.database.query(
       'SELECT * FROM knowledge_documents ORDER BY created_at DESC, title',

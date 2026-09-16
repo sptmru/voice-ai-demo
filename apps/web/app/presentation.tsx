@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import {
   ArrowRight,
   AudioLines,
@@ -74,6 +74,13 @@ const business: Record<
 };
 const actionLabels: Record<string, string> = {
   appointment: 'Appointment booked',
+  'appointment-rescheduled': 'Appointment rescheduled',
+  'appointment-cancelled': 'Appointment cancelled',
+  'repair-quote-approved': 'Repair quote approved',
+  reschedule_appointment: 'Moved the appointment',
+  cancel_appointment: 'Cancelled the appointment',
+  approve_repair_quote: 'Recorded customer approval',
+  update_repair_context: 'Updated appliance details',
   get_repair_catalog: 'Checked services and prices',
   get_repair_status: 'Checked repair status',
   lead: 'Qualified lead saved',
@@ -142,6 +149,8 @@ function ActionResult({ action, timeZone = 'UTC' }: { action: Record<string, unk
     'requestedChange',
     'reason',
     'summary',
+    'jobId',
+    'estimateAMD',
   ];
   return (
     <article className="demo-result-action">
@@ -178,7 +187,15 @@ function ActionResult({ action, timeZone = 'UTC' }: { action: Record<string, unk
     </article>
   );
 }
-function Transcript({ events, partial }: { events: AgentEvent[]; partial?: string }) {
+function Transcript({
+  events,
+  partial,
+  handoff,
+}: {
+  events: AgentEvent[];
+  partial?: string;
+  handoff?: Handoff | null;
+}) {
   const end = useRef<HTMLDivElement>(null);
   const turns = events.filter((e) => e.type === 'transcript');
   useEffect(() => {
@@ -189,8 +206,12 @@ function Transcript({ events, partial }: { events: AgentEvent[]; partial?: strin
       {!turns.length && (
         <div className="demo-conversation-empty">
           <AudioLines size={30} />
-          <h3>Your agent is ready.</h3>
-          <p>Speak naturally, ask a follow-up, or use the suggested message below.</p>
+          <h3>{handoff ? 'Continue with your team.' : 'Your agent is ready.'}</h3>
+          <p>
+            {handoff
+              ? 'Write a message below. The AI is paused while the team helps.'
+              : 'Speak naturally, ask a follow-up, or use the suggested message below.'}
+          </p>
         </div>
       )}
       {turns.map((event) => (
@@ -219,6 +240,9 @@ function Transcript({ events, partial }: { events: AgentEvent[]; partial?: strin
   );
 }
 export function Presentation(props: {
+  intake?: ReactNode;
+  records?: ReactNode;
+  confirmations?: ReactNode;
   scenarios: DemoScenario[];
   scenario: string;
   onScenario: (id: string) => void;
@@ -463,7 +487,9 @@ export function Presentation(props: {
               </button>
             </div>
           )}
-          <Transcript events={events} partial={props.partialTranscript} />
+          <Transcript events={events} partial={props.partialTranscript} handoff={handoff} />
+          {props.confirmations}
+          {props.intake}
           {active &&
           !handoff &&
           (promptScenario?.quickPrompts?.length ||
@@ -528,6 +554,7 @@ export function Presentation(props: {
           </div>
         </section>
         <aside className="demo-progress">
+          {props.records}
           {evidence && <KnowledgeEvidence result={evidence} />}
           <section className="panel">
             <div className="panel-heading">
@@ -626,6 +653,7 @@ export function Presentation(props: {
   );
 }
 export function OperatorPanel(props: {
+  repairRecords?: ReactNode;
   queue: SessionDetail[];
   detail?: SessionDetail;
   events: AgentEvent[];
@@ -719,7 +747,8 @@ export function OperatorPanel(props: {
                   </button>
                 )}
               </div>
-              <Transcript events={props.events} />
+              {props.repairRecords}
+              <Transcript events={props.events} handoff={handoff} />
               <form
                 className="composer"
                 onSubmit={(event) => {

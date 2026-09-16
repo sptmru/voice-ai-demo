@@ -38,6 +38,17 @@ import {
   Zap,
 } from 'lucide-react';
 import { KnowledgeEvidence, SourceCard, type EvidenceResult } from './knowledge-evidence';
+import {
+  AppointmentCard,
+  ConfirmationCards,
+  DemoReadiness,
+  PhotoIntake,
+  RepairJobCard,
+  type Readiness,
+  type SessionMode,
+  type WorkshopAppointment,
+  type WorkshopJob,
+} from './workshop-controls';
 import { BrowserVoiceClient } from './voice-client';
 import { Presentation, OperatorPanel, type Handoff, type DemoScenario } from './presentation';
 import type {
@@ -60,6 +71,8 @@ type Config = {
   textMode: string;
 };
 type Detail = {
+  appointments?: WorkshopAppointment[];
+  repairJobs?: WorkshopJob[];
   session: SupportSession;
   customer: Customer;
   events: AgentEvent[];
@@ -81,7 +94,10 @@ async function api<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await response.json().catch(() => ({}));
     throw new Error(body.error || `Request failed (${response.status})`);
   }
-  return response.status === 204 ? (undefined as T) : response.json();
+  if (response.status === 204) return undefined as T;
+  const body = await response.json();
+  if (body?.status === 'failed' && typeof body.error === 'string') throw new Error(body.error);
+  return body as T;
 }
 type DeleteTarget = { kind: 'document' | 'session'; id: string; title: string };
 
@@ -227,6 +243,10 @@ export default function Home() {
   const [detail, setDetail] = useState<Detail>();
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [scenario, setScenario] = useState('repair-advice');
+  const [mode, setMode] = useState<SessionMode>('rehearsal');
+  const [readiness, setReadiness] = useState<Readiness>();
+  const [readinessLoading, setReadinessLoading] = useState(false);
+  const [readinessError, setReadinessError] = useState('');
   const [tab, setTab] = useState<'demo' | 'workspace' | 'knowledge' | 'history' | 'operator'>('demo');
   const [technicalDetails, setTechnicalDetails] = useState(false);
   const [operatorInput, setOperatorInput] = useState('');
@@ -288,6 +308,25 @@ export default function Home() {
     return value;
   }, []);
 
+  const refreshReadiness = useCallback(async () => {
+    setReadinessLoading(true);
+    setReadinessError('');
+    try {
+      setReadiness(await api<Readiness>('/readiness'));
+    } catch (error) {
+      setReadinessError(error instanceof Error ? error.message : 'Readiness could not be checked.');
+    } finally {
+      setReadinessLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    void refreshReadiness();
+  }, [refreshReadiness]);
+  useEffect(() => {
+    if (!readiness?.search?.message?.includes('Warming up') || readinessLoading) return;
+    const timer = setTimeout(() => void refreshReadiness(), 2000);
+    return () => clearTimeout(timer);
+  }, [readiness, readinessLoading, refreshReadiness]);
   useEffect(() => {
     api<Config>('/config')
       .then((value) => {
@@ -351,6 +390,9 @@ export default function Home() {
           'support.state',
           'handoff.requested',
           'handoff.accepted',
+          'repair.updated',
+          'appointment.updated',
+          'photo.confirmed',
         ].includes(data.type) ||
         data.type === 'transcript' ||
         data.type === 'tool.completed'
@@ -404,6 +446,10 @@ export default function Home() {
   }
   async function start(textOnly = false) {
     await run(async () => {
+      if (mode === 'live' && !(readiness?.calendar?.configured ?? config?.calendar?.configured))
+        throw new Error(
+          'Live mode requires a configured Google Calendar. Choose Rehearsal for local bookings.',
+        );
       const previousVoice = voiceRef.current;
       voiceRef.current = null;
       setVoiceState('idle');
@@ -416,7 +462,7 @@ export default function Home() {
         if (sessionId && !finished) await api(`/sessions/${sessionId}/end`, post({}));
         const { session } = await api<{ session: SupportSession }>(
           '/sessions',
-          post({ scenarioId: scenario }),
+          post({ scenarioId: scenario, mode }),
         );
         activeSessionRef.current = session.id;
         followActivity.current = true;
@@ -443,6 +489,19 @@ export default function Home() {
       await api(`/sessions/${sessionId}/messages`, post({ text }));
       await refresh(sessionId);
     });
+  }
+  async function resolveConfirmation(id: string, approve: boolean) {
+    if (!sessionId) return;
+    await run(async () => {
+      try {
+        await api(`/sessions/${sessionId}/confirmations/${id}`, post({ approve }));
+      } finally {
+        await refresh(sessionId);
+      }
+    });
+  }
+  async function refreshCurrent() {
+    if (sessionId) await refresh(sessionId);
   }
   async function end() {
     if (sessionId)
@@ -639,6 +698,46 @@ export default function Home() {
   const voiceMetrics = events.filter((e) => e.type === 'voice.metric');
   const actions = detail?.actions || [];
   const pending = detail?.confirmations.filter((c) => c.status === 'pending') || [];
+  const currentMode: SessionMode = detail?.session.mode || 'rehearsal';
+  const currentTimeZone = detail?.session.snapshot.business?.calendarTimeZone || 'UTC';
+  const confirmations = (
+    <ConfirmationCards
+      confirmations={pending}
+      busy={busy}
+      mode={currentMode}
+      timeZone={currentTimeZone}
+      onResolve={(id, approve) => void resolveConfirmation(id, approve)}
+    />
+  );
+  const repairRecords = (operator = false) =>
+    detail?.repairJobs?.map((job) => (
+      <RepairJobCard
+        key={`${operator ? 'operator' : 'customer'}:${job.id}`}
+        job={job}
+        sessionId={detail.session.id}
+        busy={busy}
+        operator={operator && handoff?.status === 'accepted' && !finished}
+        customerActions={!operator && !finished}
+        timeZone={currentTimeZone}
+        request={api}
+        onAction={run}
+        onRefresh={refreshCurrent}
+      />
+    ));
+  const appointmentRecords = detail?.appointments?.map((appointment) => (
+    <AppointmentCard
+      key={`${appointment.id}:${appointment.revision}`}
+      appointment={appointment}
+      sessionId={detail.session.id}
+      busy={busy || voiceConnected || voiceBusy}
+      timeZone={currentTimeZone}
+      enabled={!finished && !handoff}
+      request={api}
+      onAction={run}
+      onRefresh={refreshCurrent}
+    />
+  ));
+
   const chosenScenario = config?.scenarios.find((s) => s.id === scenario);
 
   return (
@@ -764,8 +863,44 @@ export default function Home() {
             </button>
           </div>
         )}
+        {(tab === 'demo' || tab === 'workspace') && (
+          <DemoReadiness
+            mode={mode}
+            onMode={setMode}
+            activeMode={detail && !finished ? currentMode : undefined}
+            provider={voiceProvider}
+            onProvider={setVoiceProvider}
+            readiness={readiness}
+            loading={readinessLoading}
+            error={readinessError}
+            busy={busy || voiceBusy || voiceConnected}
+            onRefresh={() => void refreshReadiness()}
+          />
+        )}
         {tab === 'demo' && (
           <Presentation
+            confirmations={confirmations}
+            records={
+              <>
+                {appointmentRecords}
+                {repairRecords()}
+              </>
+            }
+            intake={
+              sessionId && !finished && !handoff && detail?.session.scenarioId.startsWith('repair-') ? (
+                <PhotoIntake
+                  key={sessionId}
+                  sessionId={sessionId}
+                  busy={busy || voiceBusy}
+                  enabled={!!readiness?.vision?.configured}
+                  voiceConnected={voiceConnected}
+                  events={events}
+                  request={api}
+                  onAction={run}
+                  onRefresh={refreshCurrent}
+                />
+              ) : undefined
+            }
             scenarios={config?.scenarios || []}
             scenario={scenario}
             onScenario={setScenario}
@@ -796,6 +931,7 @@ export default function Home() {
         )}
         {tab === 'operator' && (
           <OperatorPanel
+            repairRecords={repairRecords(true)}
             queue={operatorQueue}
             detail={detail}
             events={events}
@@ -1123,49 +1259,7 @@ export default function Home() {
                   {activity.map((event) => (
                     <EventCard key={event.id} event={event} />
                   ))}
-                  {pending.map((c) => (
-                    <div className="confirmation" key={c.id}>
-                      <ShieldCheck size={20} />
-                      <h3>Approve a sensitive action</h3>
-                      <p>{toolLabel(c.toolName)}</p>
-                      <p>
-                        This invalidates the current demo trunk credentials. This is a local mock operation.
-                      </p>
-                      <small>Expires {new Date(c.expiresAt).toLocaleTimeString()}</small>
-                      <div>
-                        <button
-                          className="button outline"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(async () => {
-                              await api(
-                                `/sessions/${sessionId}/confirmations/${c.id}`,
-                                post({ approve: false }),
-                              );
-                              await refresh(sessionId!);
-                            })
-                          }
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          className="button primary"
-                          disabled={busy}
-                          onClick={() =>
-                            void run(async () => {
-                              await api(
-                                `/sessions/${sessionId}/confirmations/${c.id}`,
-                                post({ approve: true }),
-                              );
-                              await refresh(sessionId!);
-                            })
-                          }
-                        >
-                          Confirm reset
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                  {tab === 'workspace' && confirmations}
                 </div>
                 <div className="trace-footer">
                   <span>

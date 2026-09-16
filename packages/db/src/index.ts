@@ -1,3 +1,4 @@
+import { RepairLifecycle } from './repair-lifecycle.js';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { databaseUrl } from './config.js';
@@ -29,6 +30,7 @@ const sessionFromRow = (row: Row): SupportSession => ({
   customerId: row.customer_id,
   scenarioId: row.scenario_id,
   status: row.status,
+  mode: row.mode ?? 'rehearsal',
   createdAt: iso(row.created_at),
   endedAt: row.ended_at ? iso(row.ended_at) : null,
   snapshot: row.snapshot,
@@ -64,13 +66,31 @@ const actionFromRow = (row: Row): Record<string, unknown> => ({
   status: row.status,
   createdAt: iso(row.created_at),
   dispatch:
-    row.kind === 'appointment' && row.input?.provider === 'google'
-      ? 'Created in Google Calendar; no attendee invitations sent.'
+    ['appointment', 'appointment-rescheduled', 'appointment-cancelled'].includes(row.kind) &&
+    row.input?.provider === 'google'
+      ? `${row.kind === 'appointment-cancelled' ? 'Cancelled' : row.kind === 'appointment-rescheduled' ? 'Updated' : 'Created'} in Google Calendar; no attendee invitations sent.`
       : 'Demo: recorded locally; no external message or fulfillment change sent.',
 });
 
 export class PostgresRepository implements Repository {
   constructor(public readonly database: pg.Pool = pool) {}
+
+  listCalendarReservations: NonNullable<Repository['listCalendarReservations']> = (provider) =>
+    new RepairLifecycle(this.database).listCalendarReservations(provider);
+  bookAppointment: NonNullable<Repository['bookAppointment']> = async (sessionId, requested, create) =>
+    new RepairLifecycle(this.database).bookAppointment(await this.getSession(sessionId), requested, create);
+  getAppointment: NonNullable<Repository['getAppointment']> = (sessionId, id) =>
+    new RepairLifecycle(this.database).getAppointment(sessionId, id);
+  saveAppointment: NonNullable<Repository['saveAppointment']> = async (sessionId, input) =>
+    new RepairLifecycle(this.database).saveAppointment(await this.getSession(sessionId), input);
+  changeAppointment: NonNullable<Repository['changeAppointment']> = (...args) =>
+    new RepairLifecycle(this.database).changeAppointment(...args);
+  listRepairJobs: NonNullable<Repository['listRepairJobs']> = (sessionId) =>
+    new RepairLifecycle(this.database).listRepairJobs(sessionId);
+  getRepairJob: NonNullable<Repository['getRepairJob']> = (sessionId, id) =>
+    new RepairLifecycle(this.database).getRepairJob(sessionId, id);
+  transitionRepairJob: NonNullable<Repository['transitionRepairJob']> = (...args) =>
+    new RepairLifecycle(this.database).transitionRepairJob(...args);
 
   async getCustomer(id: string): Promise<Customer> {
     const { rows } = await this.database.query('SELECT data FROM customers WHERE id=$1', [id]);
@@ -78,14 +98,19 @@ export class PostgresRepository implements Repository {
     return rows[0].data;
   }
 
-  async createSession(scenario: ScenarioId): Promise<SupportSession> {
+  async createSession(
+    scenario: ScenarioId,
+    mode: import('../../core/src/domain.js').SessionMode = 'rehearsal',
+  ): Promise<SupportSession> {
     const { rows } = await this.database.query(
-      `INSERT INTO support_sessions(id,customer_id,scenario_id,snapshot)
-      SELECT $1,customer_id,id,snapshot FROM scenario_templates WHERE id=$2 RETURNING *`,
-      [randomUUID(), scenario],
+      `INSERT INTO support_sessions(id,customer_id,scenario_id,snapshot,mode)
+      SELECT $1,customer_id,id,snapshot,$3 FROM scenario_templates WHERE id=$2 RETURNING *`,
+      [randomUUID(), scenario, mode],
     );
     if (!rows[0]) throw new Error('Scenario not found; run pnpm db:seed');
-    return sessionFromRow(rows[0]);
+    const session = sessionFromRow(rows[0]);
+    await new RepairLifecycle(this.database).seedSessionJobs(session);
+    return session;
   }
 
   async getSession(id: string): Promise<SupportSession> {
@@ -234,7 +259,10 @@ export class PostgresRepository implements Repository {
         kind,
         JSON.stringify(input),
         idempotencyKey,
-        kind === 'appointment' && input.provider === 'google' ? 'confirmed_external' : 'recorded_locally',
+        ['appointment', 'appointment-rescheduled', 'appointment-cancelled'].includes(kind) &&
+        input.provider === 'google'
+          ? 'confirmed_external'
+          : 'recorded_locally',
       ],
     );
     if (!rows[0]) throw new Error('Session not found');

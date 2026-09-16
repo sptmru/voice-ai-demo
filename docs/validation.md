@@ -1,5 +1,45 @@
 # Implementation validation
 
+## 2026-09-16 — Complete workshop journey
+
+Implemented generative repair text via configured OpenAI/Gemini, reviewed photo extraction,
+immutable Rehearsal/Live session mode, persistent booking and repair records, revision-bound
+rescheduling/cancellation and quote confirmation, operator lifecycle changes, readiness and
+local RAG warmup. Migration 006 backfills existing appointment actions without external calls.
+The public application was not rebuilt or redeployed during this work.
+
+Verification on the working tree:
+
+- 142 unit tests passed, including both provider adapters, text tools, photo output validation,
+  calendar PATCH/DELETE and all-day timezone handling, conversation checks and voice proof harness.
+- Full integration run: 65 tests passed in disposable schemas. The final additional photo-context
+  regression was verified by rerunning all four workshop HTTP tests; 66 distinct integration cases
+  are covered across these runs. The ten lifecycle cases were rerun after calendar retry fixes.
+- 20 Chromium workflows passed: four new workshop flows plus sixteen existing regressions.
+  Desktop/mobile screenshots were inspected. UI photo responses were stubbed in browser tests.
+- Root/web TypeScript checks and production Next.js build passed.
+- Real retrieval plus deterministic conversation evaluation: 11 conversations, 38/38 turns,
+  329/329 bounded assertions. This is regression evidence, not a held-out production benchmark.
+- Actual Gemini text (`gemini-2.5-flash`): two conversations, five turns, twelve model requests.
+  47/47 assertions passed after a documented checker correction accepting offered slot end times.
+  Initial real runs caught UTC-as-local display and unpersisted withdrawal of booking intent;
+  the application now returns local slot labels and persists explicit withdrawal before generation.
+- Actual Gemini vision read W100 and E21 correctly from one synthetic legible appliance label.
+  This does not establish accuracy for real camera photos or damaged labels.
+- Actual Gemini native voice (`gemini-3.1-flash-live-preview`): real warranty retrieval, correct
+  90-day answer and spoken source citation; 9/9 checks. Received 18 seconds of PCM audio;
+  first input to first audio was about 4.38 seconds in this single sample. Input was synthetic
+  text, so this does not verify microphone speech recognition or live interruption. Interruption
+  and provider failure behavior remain covered by protocol mocks.
+
+No real Google booking, rescheduling, cancellation, email or SMS was performed. Google mutation
+contracts were checked against mocked HTTP; OpenAI's new text/vision paths were also checked with
+mocked HTTP, not a live account. Tests forcibly clear external credentials except explicitly
+bounded model-only verification. Preview services were stopped and their schemas removed.
+
+See [verification snapshot](evaluation/conversation-verification.json),
+[conversation evaluator](evaluation/CONVERSATIONS.md) and [workflow/deployment](workshop.md).
+
 This file separates source implementation, local automated tests, and real provider evidence. Repair, customer and carrier operational records remain fictional local PostgreSQL data.
 
 ## English presentation restored — 2026-09-16

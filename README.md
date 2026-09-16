@@ -7,15 +7,15 @@ A voice and text demo for **Relay Workshop**, a fictional appliance repair servi
 **Demo** opens three repair scenarios; choose voice or **Start in text**:
 
 - **Appliance troubleshooting:** describe a washing machine, dishwasher or refrigerator issue. Follow up with a warranty question; the agent keeps the appliance context and shows current sources. Unknown model/code combinations require clarification.
-- **Book a repair:** describe the appliance and symptoms, then explicitly choose an offered diagnostic appointment. Google Calendar creates a real event when configured; without credentials the result is a labelled local demo booking. Home visits require a Yerevan address. See [calendar setup](docs/calendar.md).
-- **Check repair status:** inspect fictional customer-owned request `REP-1042`. Its quote is awaiting approval; no completion date or parts stock is invented.
+- **Book a repair:** describe the appliance and symptoms, then explicitly choose an offered diagnostic appointment. Rehearsal always creates a local booking; Live requires Google Calendar. Move or cancel an existing booking through its confirmation card. Home visits require a Yerevan address. See [calendar setup](docs/calendar.md).
+- **Check repair status:** inspect fictional customer-owned request `REP-1042`. Its quote is awaiting approval. Confirm the exact quote on its approval card. New bookings create persistent repair requests; the operator can record diagnosis, a quote, readiness and collection.
 - **Talk to a person:** transfer the saved conversation into **Operator desk**, accept it and reply. AI handling stops after transfer. This is an owner-scoped browser demonstration, not production staff authentication or telephone transfer.
 
-Repair prices, jobs and the Relay appliance models are explicitly fictional. Text mode uses a finite, extractive policy without an LLM key; voice uses scenario instructions and the same validated tools. Consultation, lead, order and seven telecom scenarios remain under **Other scenarios**. See the [walkthrough](docs/demo-script.md).
+Repair prices, jobs and the Relay appliance models are explicitly fictional. Repair text conversations use OpenAI or Gemini when configured, with the same validated tools as voice. Without a key, a finite extractive policy remains available. Photo reading extracts a visible model/error into an editable review card; only confirmed fields enter the conversation. Photos are sent to the configured vision provider and are not stored by this application. Rehearsal uses external AI when configured while keeping calendar actions local. Use **Check demo readiness** to warm local search and check provider configuration before a presentation. See [the workshop workflow](docs/workshop.md). Consultation, lead, order and seven telecom scenarios remain under **Other scenarios**. See the [walkthrough](docs/demo-script.md).
 
 The knowledge base includes 16 current English repair documents, an archived warranty version and 10 telecom documents. RAG uses multilingual embeddings, RU/EN hybrid search, cross-encoder reranking, conversation context and evidence states (`supported`, `clarify`, `insufficient`, `conflict`). Sources show section, version and PDF page where available. See [RAG architecture and evaluation](docs/rag.md).
 
-**Existing installations:** run migrations through `005_knowledge_evidence.sql`, seed the new templates/documents, then run `pnpm rag:reindex` to rebuild existing uploads with the new embedding model. Review [reindex instructions](docs/rag-reindex.md). Old uploads have only stored passages; recovering the original PDF is necessary for faithful page citations. Sessions and uploads are preserved; historical citations remain snapshots of the earlier answer. These commands change the selected installation, so run them when deploying the update.
+**Existing installations:** run migrations through `006_repair_lifecycle.sql`, seed the new templates/documents, then run `pnpm rag:reindex` to rebuild existing uploads with the new embedding model. Review [reindex instructions](docs/rag-reindex.md). Old uploads have only stored passages; recovering the original PDF is necessary for faithful page citations. Sessions and uploads are preserved; historical citations remain snapshots of the earlier answer. These commands change the selected installation, so run them when deploying the update.
 
 ## Run locally
 
@@ -52,18 +52,18 @@ Gemini was verified against the real API, including synthetic microphone speech 
 
 ## What is real and what is mocked
 
-| Component                                  | Implementation                                                                                                                                                                            |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Operational systems                        | Real PostgreSQL persistence over fictional repair jobs, service catalog and legacy account data; no actual repair ERP, parts inventory or carrier integration                             |
-| Appointment calendar                       | Real Google OAuth, FreeBusy and event insertion when configured; explicit local demo fallback otherwise. No attendee invitations are sent. Live Google verification requires credentials. |
-| Leads and store orders                     | Real local lead and delivery-change request records over fictional customer/order data; no external CRM or fulfillment updates                                                            |
-| Human handoff                              | Persisted owner-scoped operator queue and browser text replies; stops AI voice/tools. No PSTN transfer or external dispatch                                                               |
-| Text conversation                          | Explicit, evidence-driven deterministic policy, no LLM key required; finite support workflows, not a general chatbot                                                                      |
-| Retrieval                                  | Local multilingual E5 (384 dimensions), RU/EN full text + pgvector/RRF, multilingual cross-encoder, active/version/model filters and evidence admission                                   |
-| Tickets, callbacks, follow-ups, escalation | Real local records; no email, callback, paging or external CRM dispatch                                                                                                                   |
-| Sensitive reset                            | Explicit browser confirmation; simulated credential version changes atomically in session snapshot; never touches a live trunk                                                            |
-| Events and reports                         | Real persisted tool, retrieval, transcript, confirmation, timing and outcome events, replayed over SSE                                                                                    |
-| Identity                                   | Fictional Acme customer; random HttpOnly browser ownership cookie isolates session API access; not production account authentication                                                      |
+| Component                                  | Implementation                                                                                                                                                                               |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Operational systems                        | Real PostgreSQL persistence, owner-scoped repair jobs, revisions and lifecycle history over fictional service data; no external repair ERP, parts inventory or carrier integration           |
+| Appointment calendar                       | Explicit Rehearsal/Live session mode; Google OAuth, FreeBusy, insertion, revision-bound rescheduling/cancellation. Rehearsal reservations persist locally. No attendee invitations are sent. |
+| Leads and store orders                     | Real local lead and delivery-change request records over fictional customer/order data; no external CRM or fulfillment updates                                                               |
+| Human handoff                              | Persisted owner-scoped operator queue and browser text replies; stops AI voice/tools. No PSTN transfer or external dispatch                                                                  |
+| Text conversation                          | Repair conversations use configured OpenAI/Gemini with bounded tool calls; no-key fallback uses a finite deterministic policy                                                                |
+| Retrieval                                  | Local multilingual E5 (384 dimensions), RU/EN full text + pgvector/RRF, multilingual cross-encoder, active/version/model filters and evidence admission                                      |
+| Tickets, callbacks, follow-ups, escalation | Real local records; no email, callback, paging or external CRM dispatch                                                                                                                      |
+| Sensitive reset                            | Explicit browser confirmation; simulated credential version changes atomically in session snapshot; never touches a live trunk                                                               |
+| Events and reports                         | Real persisted tool, retrieval, transcript, confirmation, timing and outcome events, replayed over SSE                                                                                       |
+| Identity                                   | Fictional Acme customer; random HttpOnly browser ownership cookie isolates session API access; not production account authentication                                                         |
 
 The agent never exposes private model reasoning. Retrieved content is evidence, not instructions. The browser cannot select another customer through tool arguments. A spoken or typed “yes” cannot approve a sensitive tool; use its confirmation card.
 
@@ -80,7 +80,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-Current repair/RAG verification, evaluation results and limitations are recorded in [validation](docs/validation.md). Integration tests forcibly clear external provider credentials even when `.env` contains real keys. Run `pnpm rag:evaluate` in the API container for the 54-question isolated retrieval regression set.
+Current repair/RAG verification, evaluation results and limitations are recorded in [validation](docs/validation.md). Conversation-level checks and optional live model evaluation are documented in [evaluation](docs/evaluation/CONVERSATIONS.md). Integration tests forcibly clear external provider credentials even when `.env` contains real keys. Run `pnpm rag:evaluate` in the API container for the 54-question isolated retrieval regression set.
 
 The production web build uses `.next-production`, separate from `.next` used by the dev server. Live verification scripts are documented in [providers](docs/providers.md); these make billed provider calls and are separate from automated fixture tests.
 

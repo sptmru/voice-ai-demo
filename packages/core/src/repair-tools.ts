@@ -16,18 +16,19 @@ function define<T>(
   description: string,
   inputSchema: z.ZodType<T>,
   execute: ToolDefinition<T>['execute'],
+  permission: ToolDefinition<T>['permission'] = 'read-only',
 ): ToolDefinition<T> {
   return {
     name,
     description,
     inputSchema,
     execute,
-    permission: 'read-only',
+    permission,
     jsonSchema: zodToJsonSchema(inputSchema, { $refStrategy: 'none' }) as Record<string, unknown>,
   };
 }
 export function createRepairTools(): ToolDefinition[] {
-  return [
+  const tools: ToolDefinition[] = [
     define(
       'get_repair_catalog',
       'Read the authoritative fictional demo service catalog and AMD diagnosis prices. Repair labor/parts totals require diagnosis and customer approval. No live parts inventory is connected.',
@@ -51,9 +52,12 @@ export function createRepairTools(): ToolDefinition[] {
         .object({
           appliance: z.enum(['washing-machine', 'dishwasher', 'refrigerator']).optional(),
           model: z.string().trim().min(2).max(100).optional(),
-          issue: z.string().trim().min(3).max(500).optional(),
+          issue: z.string().trim().min(3).max(600).optional(),
           address: z.string().trim().min(8).max(500).optional(),
           region: z.string().trim().min(2).max(100).optional(),
+          bookingRequested: z.boolean().optional(),
+          contactName: z.string().trim().min(2).max(100).optional(),
+          contactPhone: z.string().trim().min(5).max(40).optional(),
         })
         .strict(),
       async (input, c) => {
@@ -72,14 +76,68 @@ export function createRepairTools(): ToolDefinition[] {
       },
     ),
     define(
+      'list_repair_jobs',
+      'List persisted repair jobs accessible to this session owner, including booked diagnoses and their revision/history.',
+      z.object({}).strict(),
+      async (_, c) => {
+        state(c);
+        return c.repo.listRepairJobs ? c.repo.listRepairJobs(c.session.id) : state(c).jobs;
+      },
+    ),
+    define(
+      'approve_repair_quote',
+      'Propose approval of the current repair quote. The application confirmation card is mandatory. Bind to the current job revision; never invent approval or start repairs without it.',
+      z
+        .object({
+          jobId: z.string().trim().min(3).max(60),
+          expectedRevision: z.number().int().min(1),
+          expectedEstimateAMD: z.number().int().nonnegative(),
+        })
+        .strict(),
+      async (input, c) => {
+        state(c);
+        if (!c.repo.getRepairJob || !c.repo.transitionRepairJob)
+          throw new Error('Persistent repair jobs are unavailable');
+        const job = await c.repo.getRepairJob(c.session.id, input.jobId);
+        if (!job) throw new Error('Repair job not found for this session owner');
+        if (job.estimateAMD !== input.expectedEstimateAMD)
+          throw new Error('Repair quote changed; review the current amount before approval');
+        const result = await c.repo.transitionRepairJob(
+          c.session.id,
+          input.jobId,
+          {
+            status: 'in_progress',
+            note: 'Customer approved the repair quote using the application confirmation card.',
+            expectedRevision: input.expectedRevision,
+          },
+          'customer',
+        );
+        await c.repo.createAction(
+          c.session.id,
+          'repair-quote-approved',
+          {
+            jobId: result.id,
+            estimateAMD: result.estimateAMD,
+            revision: result.revision,
+            status: result.status,
+          },
+          `repair:${result.id}:approved:${result.revision}`,
+        );
+        return result;
+      },
+      'sensitive-write',
+    ),
+    define(
       'get_repair_status',
       'Look up a fictional repair job bound to this customer. Do not invent completion dates or parts stock. Never use documents as a live job status source.',
       z.object({ jobId: z.string().trim().min(3).max(60) }).strict(),
       async ({ jobId }, c) => {
         const repair = state(c);
-        const job = repair.jobs.find(
-          (j) => j.id.toUpperCase() === jobId.toUpperCase() && j.customerId === c.session.customerId,
-        );
+        const job = c.repo.getRepairJob
+          ? await c.repo.getRepairJob(c.session.id, jobId)
+          : repair.jobs.find(
+              (j) => j.id.toUpperCase() === jobId.toUpperCase() && j.customerId === c.session.customerId,
+            );
         if (!job) throw new Error('Repair job not found for this customer');
         await c.repo.updateSession(c.session.id, {
           snapshot: { ...c.session.snapshot, repair: { ...repair, selectedJobId: job.id } },
@@ -88,6 +146,24 @@ export function createRepairTools(): ToolDefinition[] {
       },
     ),
   ];
+  return tools.map((tool) =>
+    tool.name !== 'approve_repair_quote'
+      ? tool
+      : {
+          ...tool,
+          prepare: async (input: any, c: ToolContext) => {
+            state(c);
+            if (!c.repo.getRepairJob) throw new Error('Persistent repair jobs are unavailable');
+            const job = await c.repo.getRepairJob(c.session.id, input.jobId);
+            if (!job) throw new Error('Repair job not found for this session owner');
+            if (job.status !== 'awaiting_approval' || job.revision !== input.expectedRevision)
+              throw new Error('Repair job changed; review its current quote before confirming');
+            if (job.estimateAMD === undefined || job.estimateAMD !== input.expectedEstimateAMD)
+              throw new Error('Repair quote changed; review the current amount before approval');
+            return { ...input, jobId: job.id, expectedEstimateAMD: job.estimateAMD };
+          },
+        },
+  );
 }
 
 export function validateRepairBooking(session: ToolContext['session'], serviceId: string) {

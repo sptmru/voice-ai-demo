@@ -1,3 +1,5 @@
+import { attachWorkshop } from './workshop.js';
+import { createTextAgent, modelConfig } from '../../../packages/core/src/text-agent.js';
 import { createHash, randomBytes } from 'node:crypto';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import cors from 'cors';
@@ -34,7 +36,7 @@ export function ownerFromRequest(request: Pick<Request, 'headers'>): string | un
 export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
   const app = express();
   const stream = new EventStream(repo);
-  const runtime = new SupportRuntime(repo, rag, stream.emitForSession);
+  const runtime = new SupportRuntime(repo, rag, stream.emitForSession, createTextAgent());
   const allowedOrigins = new Set(
     (process.env.WEB_ORIGIN || 'http://localhost:3100').split(',').map((s) => s.trim()),
   );
@@ -68,6 +70,56 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       documents: documents.length,
     });
   });
+  let warming: Promise<void> | undefined;
+  let searchReady = false;
+  let warmError = false;
+  app.get('/api/readiness', async (_req, res) => {
+    let database = false;
+    let documentCount = 0;
+    try {
+      await pool.query('SELECT 1');
+      database = true;
+      documentCount = (await rag.listDocuments()).length;
+    } catch {}
+    if (database && documentCount && !warming) {
+      warming = (async () => {
+        try {
+          await rag.warmup?.();
+          searchReady = true;
+          warmError = false;
+        } catch {
+          warmError = true;
+        }
+      })();
+    }
+    const calendar = getCalendarService().status();
+    res.json({
+      database: { ready: database },
+      search: {
+        ready: database && documentCount > 0 && searchReady,
+        documentCount,
+        message: !documentCount
+          ? 'Upload or seed the knowledge base.'
+          : warmError
+            ? 'Search model warmup failed. Check the API logs and retry.'
+            : searchReady
+              ? 'Knowledge search is warmed up.'
+              : 'Warming up local search models…',
+      },
+      providers: {
+        gemini: { configured: !!process.env.GEMINI_API_KEY },
+        openai: { configured: !!process.env.OPENAI_API_KEY },
+      },
+      text: { configured: !!modelConfig('text'), provider: modelConfig('text')?.provider ?? 'deterministic' },
+      vision: { configured: !!modelConfig('vision'), provider: modelConfig('vision')?.provider ?? null },
+      calendar: {
+        ...calendar,
+        message:
+          'Configuration check only; calendar connectivity is checked when requesting available times.',
+      },
+    });
+    if (warmError) warming = undefined;
+  });
   app.get('/api/config', (_req, res) =>
     res.json({
       scenarios,
@@ -83,7 +135,11 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
         },
       },
       voiceUrl: process.env.VOICE_PUBLIC_URL || null,
-      textMode: 'Local diagnostic policy',
+      textMode: modelConfig('text')
+        ? `Conversational text (${modelConfig('text')!.provider})`
+        : 'Local diagnostic policy',
+      text: { configured: !!modelConfig('text'), provider: modelConfig('text')?.provider ?? 'deterministic' },
+      vision: { configured: !!modelConfig('vision'), provider: modelConfig('vision')?.provider ?? null },
       externalSystems: 'Local PostgreSQL mocks',
       calendar: getCalendarService().status(),
     }),
@@ -120,6 +176,7 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       active.delete(id);
     }
   };
+  attachWorkshop(app, { repo, runtime, owned, lock, emit: stream.emitForSession, voiceActive });
   app.get('/api/sessions', async (req, res) => {
     const own = await pool.query<{ session_id: string }>(
       'SELECT session_id FROM api_session_owners WHERE owner_hash=$1',
@@ -129,8 +186,16 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     res.json((await repo.listSessions([...ids])).filter((s) => ids.has(s.id)));
   });
   app.post('/api/sessions', async (req, res) => {
-    const { scenarioId } = z.object({ scenarioId: scenarioSchema }).strict().parse(req.body);
-    const session = await runtime.startSession(scenarioId);
+    const { scenarioId, mode } = z
+      .object({ scenarioId: scenarioSchema, mode: z.enum(['rehearsal', 'live']).default('rehearsal') })
+      .strict()
+      .parse(req.body);
+    if (mode === 'live' && !getCalendarService().status().configured)
+      throw Object.assign(
+        new Error('Live mode requires a configured Google Calendar. Choose Rehearsal for local bookings.'),
+        { status: 409 },
+      );
+    const session = await runtime.startSession(scenarioId, mode);
     await pool.query('INSERT INTO api_session_owners(session_id,owner_hash) VALUES ($1,$2)', [
       session.id,
       ownerFromRequest(req),
@@ -157,6 +222,10 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       confirmations,
       memory,
       handoff: session.handoff ?? null,
+      repairJobs: (await repo.listRepairJobs?.(session.id)) ?? [],
+      appointments: (await repo.getAppointment?.(session.id))
+        ? [await repo.getAppointment?.(session.id)]
+        : [],
     });
   });
   app.get('/api/operator/queue', async (req, res) => {
@@ -259,6 +328,16 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
           status: 409,
         });
       await stream.drain(id);
+      const appointment = await repo.getAppointment?.(id);
+      if (appointment?.provider === 'demo' && appointment.status === 'booked') {
+        await getCalendarService('rehearsal').cancel({
+          sessionId: appointment.sessionId,
+          bookingKey: 'appointment',
+          eventId: appointment.eventId,
+          previousStart: appointment.start,
+          previousEnd: appointment.end,
+        });
+      }
       if (!(await repo.deleteSession(id)))
         throw Object.assign(new Error('Session not found'), { status: 404 });
       stream.closeSession(id);
@@ -291,12 +370,12 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     idSchema.parse(req.params.confirmationId);
     const session = await repo.getSession(String(req.params.id));
     if (session.status !== 'active') throw Object.assign(new Error('Session has ended'), { status: 409 });
-    if (session.handoff)
-      throw Object.assign(new Error('AI actions are paused during operator handoff'), { status: 409 });
     const confirmation = (await repo.getConfirmations(session.id)).find(
       (c) => c.id === req.params.confirmationId,
     );
     if (!confirmation) throw Object.assign(new Error('Confirmation not found'), { status: 404 });
+    if (session.handoff && confirmation.toolName !== 'approve_repair_quote')
+      throw Object.assign(new Error('AI actions are paused during operator handoff'), { status: 409 });
     if (confirmation.status === 'expired')
       throw Object.assign(new Error('Confirmation expired'), { status: 410 });
     if (confirmation.status !== 'pending')

@@ -209,3 +209,137 @@ describe('calendar demo and scheduling rules', () => {
     expect(after.slots[0].start).toBe('2026-11-02T14:00:00.000Z');
   });
 });
+
+describe('calendar appointment lifecycle', () => {
+  const moved = { start: '2026-09-16T06:00:00.000Z', end: '2026-09-16T06:30:00.000Z' };
+  const change = {
+    sessionId: input.sessionId,
+    bookingKey: input.bookingKey,
+    eventId: id,
+    previousStart: input.start,
+    previousEnd: input.end,
+    ...moved,
+  };
+  it('patches the original Google event with availability and ETag checks, and retries without another update', async () => {
+    const { service, fetcher } = make();
+    const updated = { ...event, start: { dateTime: moved.start }, end: { dateTime: moved.end } };
+    fetcher
+      .mockResolvedValueOnce(json({ access_token: 'access' }))
+      .mockResolvedValueOnce(json({ ...event, etag: 'revision-one' }))
+      .mockResolvedValueOnce(json({ items: [event] }))
+      .mockResolvedValueOnce(json(updated))
+      .mockResolvedValueOnce(json(updated));
+    expect(await service.reschedule(change)).toMatchObject({ eventId: id, ...moved });
+    expect(fetcher.mock.calls[3][0]).toContain(`/events/${id}?sendUpdates=none`);
+    expect(fetcher.mock.calls[3][1]).toMatchObject({
+      method: 'PATCH',
+      headers: { 'if-match': 'revision-one' },
+    });
+    expect(await service.reschedule(change)).toMatchObject({ eventId: id, ...moved });
+    expect(fetcher.mock.calls.filter(([, request]) => request?.method === 'PATCH')).toHaveLength(1);
+  });
+  it('rejects newly occupied slots and externally changed appointments before patching', async () => {
+    const { service, fetcher } = make();
+    fetcher
+      .mockResolvedValueOnce(json({ access_token: 'access' }))
+      .mockResolvedValueOnce(json(event))
+      .mockResolvedValueOnce(
+        json({
+          items: [
+            { ...event, id: 'another-event', start: { dateTime: moved.start }, end: { dateTime: moved.end } },
+          ],
+        }),
+      );
+    await expect(service.reschedule(change)).rejects.toMatchObject({ code: 'SLOT_UNAVAILABLE' });
+    fetcher.mockResolvedValueOnce(json({ ...event, start: { dateTime: '2026-09-16T07:00:00Z' } }));
+    await expect(service.reschedule(change)).rejects.toMatchObject({ code: 'EXTERNAL_CHANGE' });
+    expect(fetcher.mock.calls.some(([, request]) => request?.method === 'PATCH')).toBe(false);
+  });
+  it('cancels only its exact event and treats an already deleted event as successful cancellation', async () => {
+    const { service, fetcher } = make();
+    fetcher
+      .mockResolvedValueOnce(json({ access_token: 'access' }))
+      .mockResolvedValueOnce(json({ ...event, etag: 'revision-one' }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(json({}, 404));
+    expect(await service.cancel(change)).toMatchObject({
+      status: 'cancelled',
+      eventId: id,
+      provider: 'google',
+    });
+    expect(fetcher.mock.calls[2][1]).toMatchObject({
+      method: 'DELETE',
+      headers: { 'if-match': 'revision-one' },
+    });
+    expect(await service.cancel(change)).toMatchObject({ status: 'cancelled' });
+    expect(fetcher.mock.calls.filter(([, request]) => request?.method === 'DELETE')).toHaveLength(1);
+    await expect(service.cancel({ ...change, eventId: 'f'.repeat(64) })).rejects.toMatchObject({
+      code: 'INVALID_EVENT',
+    });
+  });
+  it('moves and cancels a local rehearsal reservation and releases occupied time', async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    const service = new CalendarService({ env: {}, fetch: fetcher, now: () => now });
+    const booked = await service.book(input);
+    const movedBooking = await service.reschedule({ ...change, eventId: booked.eventId });
+    expect(movedBooking.eventId).toBe(booked.eventId);
+    const slots = (await service.listSlots({ days: 1 })).slots;
+    expect(slots).toContainEqual({ start: input.start, end: input.end });
+    expect(slots).not.toContainEqual(moved);
+    await service.cancel({
+      ...change,
+      eventId: booked.eventId,
+      previousStart: moved.start,
+      previousEnd: moved.end,
+    });
+    expect((await service.listSlots({ days: 1 })).slots).toContainEqual(moved);
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+  it('interprets all-day busy intervals at calendar-local midnight with an exclusive end date', async () => {
+    const { service, fetcher } = make();
+    fetcher
+      .mockResolvedValueOnce(json({ access_token: 'access' }))
+      .mockResolvedValueOnce(json({ ...event, etag: 'v1' }))
+      .mockResolvedValueOnce(
+        json({ items: [{ id: 'yesterday', start: { date: '2026-09-15' }, end: { date: '2026-09-16' } }] }),
+      )
+      .mockResolvedValueOnce(
+        json({ ...event, start: { dateTime: moved.start }, end: { dateTime: moved.end } }),
+      );
+    expect(await service.reschedule(change)).toMatchObject(moved);
+    const occupied = make();
+    occupied.fetcher
+      .mockResolvedValueOnce(json({ access_token: 'access' }))
+      .mockResolvedValueOnce(json({ ...event, etag: 'v1' }))
+      .mockResolvedValueOnce(
+        json({ items: [{ id: 'today', start: { date: '2026-09-16' }, end: { date: '2026-09-17' } }] }),
+      );
+    await expect(occupied.service.reschedule(change)).rejects.toMatchObject({ code: 'SLOT_UNAVAILABLE' });
+    expect(occupied.fetcher.mock.calls.some(([, request]) => request?.method === 'PATCH')).toBe(false);
+  });
+  it('forces rehearsal even when provider keys exist and fails live mode when they do not', async () => {
+    vi.resetModules();
+    vi.stubEnv('GOOGLE_CALENDAR_ID', env.GOOGLE_CALENDAR_ID);
+    vi.stubEnv('GOOGLE_CLIENT_ID', env.GOOGLE_CLIENT_ID);
+    vi.stubEnv('GOOGLE_CLIENT_SECRET', env.GOOGLE_CLIENT_SECRET);
+    vi.stubEnv('GOOGLE_REFRESH_TOKEN', env.GOOGLE_REFRESH_TOKEN);
+    try {
+      const configured = await import('../packages/integrations/src/calendar.js');
+      expect(configured.getCalendarService('rehearsal').status().provider).toBe('demo');
+      expect(configured.getCalendarService('live').status().provider).toBe('google');
+      vi.resetModules();
+      for (const key of [
+        'GOOGLE_CALENDAR_ID',
+        'GOOGLE_CLIENT_ID',
+        'GOOGLE_CLIENT_SECRET',
+        'GOOGLE_REFRESH_TOKEN',
+      ])
+        vi.stubEnv(key, '');
+      const blank = await import('../packages/integrations/src/calendar.js');
+      expect(() => blank.getCalendarService('live')).toThrow('Live booking requires');
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+});

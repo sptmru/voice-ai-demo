@@ -1,3 +1,4 @@
+import type { TextAgent } from './text-agent.js';
 import { repairMessage } from './repair-runtime.js';
 import { isRepairScenario } from './repair-tools.js';
 import { businessMessage } from './business-runtime.js';
@@ -24,6 +25,7 @@ export class SupportRuntime {
     private repo: Repository,
     private rag: RetrievalService,
     private emitForSession?: (id: string) => EmitEvent,
+    private textAgent?: TextAgent,
   ) {
     this.executor = new ToolExecutor(repo, rag, emitForSession);
   }
@@ -35,8 +37,8 @@ export class SupportRuntime {
     return (type, payload, duration, correlation) =>
       base(type, sanitize(payload) as Record<string, unknown>, duration, correlation);
   }
-  async startSession(scenario: ScenarioId) {
-    const session = await this.repo.createSession(scenario);
+  async startSession(scenario: ScenarioId, mode: 'rehearsal' | 'live' = 'rehearsal') {
+    const session = await this.repo.createSession(scenario, mode);
     const customer = await this.repo.getCustomer(session.customerId);
     await this.emit(session.id)('customer.identified', { customer });
     const memories = (await this.repo.getMemory(customer.id))
@@ -45,8 +47,10 @@ export class SupportRuntime {
     await this.emit(session.id)('memory.retrieved', { memories });
     await this.emit(session.id)('support.state', {
       state: 'ready',
-      mode: 'deterministic',
-      message: 'No-key text mode uses a deterministic diagnostic policy and real local tools.',
+      mode: this.textAgent ? 'generative' : 'deterministic',
+      message: this.textAgent
+        ? `Conversational text uses ${this.textAgent.provider}; actions use validated tools.`
+        : 'No-key text mode uses a deterministic diagnostic policy and real local tools.',
     });
     return session;
   }
@@ -166,6 +170,48 @@ export class SupportRuntime {
             ? 'I have passed this conversation to the operator queue with your repair context.'
             : 'I have passed this conversation to the operator queue. Your context is included.',
         );
+      }
+      if (isRepairScenario(session.scenarioId) && this.textAgent) {
+        if (/do not book|don't book|changed my mind|stop booking|never mind|не записывай/i.test(text))
+          await this.tool(id, 'update_repair_context', { bookingRequested: false });
+        if (/smoke|sparks?|burning smell|дым|искр/i.test(text)) {
+          await this.tool(id, 'request_human_handoff', { reason: text.slice(0, 2000) });
+          return this.say(
+            id,
+            'Stop using the appliance and keep away from it if there is smoke or sparking. I have passed your case to an operator. If there is an active fire or immediate danger, contact local emergency services.',
+          );
+        }
+        await this.emit(id)('support.state', {
+          state: 'thinking',
+          mode: 'generative',
+          provider: this.textAgent.provider,
+        });
+        try {
+          const answer = await this.textAgent.respond({
+            session: await this.repo.getSession(id),
+            events: await this.repo.getEvents(id),
+            tools: this.executor.tools,
+            execute: (call) => this.executeTool(id, call),
+            emit: this.emit(id),
+          });
+          await this.emit(id)('transcript', {
+            role: 'assistant',
+            text: answer,
+            final: true,
+            mode: 'generative',
+          });
+          return { text: answer };
+        } catch {
+          await this.emit(id)('error', {
+            source: 'text',
+            message:
+              'The text provider could not finish this turn. Completed actions remain saved; review the booking or request card before retrying.',
+          });
+          return this.say(
+            id,
+            'I could not finish that response. Please review the saved booking or request card before trying again, or ask for an operator.',
+          );
+        }
       }
       if (isRepairScenario(session.scenarioId))
         return await repairMessage(

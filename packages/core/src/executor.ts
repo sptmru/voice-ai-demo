@@ -97,7 +97,7 @@ export class ToolExecutor {
         throw new Error(
           'Interrupted tool execution requires review; use a new request after checking records',
         );
-      if (session.handoff && call.name !== 'request_human_handoff')
+      if (session.handoff && !['request_human_handoff', 'approve_repair_quote'].includes(call.name))
         throw new Error('Conversation transferred to a human operator');
       const tool = this.tools.find((t) => t.name === call.name);
       if (!tool) throw new Error(`Unknown tool: ${call.name}`);
@@ -115,7 +115,13 @@ export class ToolExecutor {
         ].includes(tool.name)
       )
         throw new Error('Telecom tools are not available in this business scenario');
-      const input = tool.inputSchema.parse(sanitize(tool.inputSchema.parse(call.input)));
+      let input = tool.inputSchema.parse(sanitize(tool.inputSchema.parse(call.input)));
+      if (tool.prepare)
+        input = tool.inputSchema.parse(
+          sanitize(
+            await tool.prepare(input, { session, repo: this.repo, rag: this.rag, emit, callId: call.id }),
+          ),
+        );
       await emit(
         'tool.started',
         { name: call.name, input, permission: tool.permission, fingerprint },
@@ -128,6 +134,7 @@ export class ToolExecutor {
         const pendingExisting = (await this.repo.getConfirmations(sessionId)).find(
           (c) =>
             c.toolName === tool.name &&
+            JSON.stringify(c.input) === JSON.stringify(input) &&
             c.status === 'pending' &&
             new Date(c.expiresAt).getTime() > Date.now(),
         );
@@ -179,11 +186,12 @@ export class ToolExecutor {
     approve: boolean,
   ): Promise<ToolExecutionResult> {
     const session = await this.repo.getSession(sessionId);
-    if (session.handoff) throw new Error('Conversation transferred to a human operator');
     if (session.status !== 'active') throw new Error('Session has ended');
     const emit = this.emit(sessionId);
     const confirmation = (await this.repo.getConfirmations(sessionId)).find((c) => c.id === id);
     if (!confirmation) throw new Error('Confirmation not found in this session');
+    if (session.handoff && confirmation.toolName !== 'approve_repair_quote')
+      throw new Error('Conversation transferred to a human operator');
     if (confirmation.status !== 'pending') throw new Error('Confirmation was already consumed');
     if (new Date(confirmation.expiresAt).getTime() <= Date.now()) throw new Error('Confirmation expired');
     const resolved = await this.repo.resolveConfirmation(sessionId, id, approve);

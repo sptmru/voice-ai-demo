@@ -30,6 +30,7 @@ export interface ToolDefinition<TInput = any, TOutput = unknown> {
   inputSchema: z.ZodType<TInput>;
   jsonSchema: Record<string, unknown>;
   permission: Permission;
+  prepare?(input: TInput, context: ToolContext): Promise<TInput>;
   execute(input: TInput, context: ToolContext): Promise<TOutput>;
 }
 const empty = z.object({}).strict();
@@ -270,13 +271,25 @@ export function createTools(): ToolDefinition[] {
         const customer = await c.repo.getCustomer(c.session.customerId);
         const tickets = await c.repo.getTickets(c.session.id);
         const actions = await c.repo.getActions(c.session.id);
+        const currentBooking =
+          isRepairScenario(c.session.scenarioId) || c.session.scenarioId === 'appointment-booking'
+            ? await c.repo.getAppointment?.(c.session.id)
+            : undefined;
+        if (currentBooking?.status === 'cancelled') {
+          input.resolved = false;
+          input.diagnosis =
+            'The diagnosis appointment was cancelled. No active booking or completed repair is confirmed.';
+          input.nextAction = 'Arrange another diagnosis if needed.';
+        }
         if (isBusinessScenario(c.session.scenarioId)) {
           if (input.intent !== businessIntent(c.session.scenarioId))
             throw new Error('Outcome intent does not match this scenario');
           await validateBusinessOutcome(c.session, input.resolved, actions);
         }
         if (isRepairScenario(c.session.scenarioId) && input.resolved) {
-          const booking = actions.find((a) => a.kind === 'appointment')!.input as Record<string, unknown>;
+          const booking =
+            currentBooking ??
+            (actions.find((a) => a.kind === 'appointment')!.input as Record<string, unknown>);
           input.diagnosis = `${booking.provider === 'google' ? 'Diagnosis appointment confirmed in Google Calendar' : 'Local demo diagnosis booking saved'}: ${String(booking.start)}. Appliance repair is not confirmed.`;
           input.nextAction =
             'Attend the diagnosis appointment; the quote and repair require separate customer approval.';

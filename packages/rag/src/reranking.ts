@@ -25,6 +25,9 @@ function load() {
     });
   return resources;
 }
+export async function warmReranker(): Promise<void> {
+  if (RERANKER_ENABLED) await load();
+}
 export async function rerank(query: string, chunks: RetrievedChunk[]): Promise<RetrievedChunk[]> {
   if (!RERANKER_ENABLED || chunks.length === 0) return chunks;
   const { tokenizer, model } = await load();

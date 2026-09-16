@@ -1,0 +1,142 @@
+{
+  "description": "Recorded verification snapshot. Deterministic, generated text and native audio are distinct evidence scopes.",
+  "deterministic": {
+    "evaluatedAt": "2026-09-16T14:30:11.813Z",
+    "mode": "deterministic",
+    "provider": null,
+    "model": null,
+    "modelRequests": 0,
+    "maxModelRequests": 0,
+    "embeddingModel": "Xenova/multilingual-e5-small",
+    "embeddingSignature": "Xenova/multilingual-e5-small:q8:mean:384:v2",
+    "warmup": {
+      "embeddingSignature": "Xenova/multilingual-e5-small:q8:mean:384:v2",
+      "reranker": "on",
+      "elapsedMs": 1467
+    },
+    "dataset": "/app/docs/evaluation/conversations.en.json",
+    "conversations": 11,
+    "conversationsPassed": 11,
+    "turns": 38,
+    "turnsPassed": 38,
+    "checks": 329,
+    "checksPassed": 329,
+    "calendar": "isolated local demo; Google credentials disabled",
+    "note": "Actual deterministic fallback answers and real local retrieval/tools. No generative LLM, microphone or speech recognition evaluated.",
+    "limitations": "Freshly authored multi-turn scenarios, separate from the 54 retrieval cases; once used for tuning they are regression tests, not permanently held-out evidence. Rule-based claim/citation checks are bounded diagnostics, not proof that every statement is entailed. Inspect transcripts and source excerpts in failures. Disposable database schema removed after evaluation.",
+    "artifact": "artifacts/conversation-evaluation-deterministic.json"
+  },
+  "liveText": {
+    "evaluatedAt": "2026-09-16T14:24:32.511Z",
+    "mode": "live-text",
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "modelRequests": 12,
+    "maxModelRequests": 15,
+    "embeddingModel": "Xenova/multilingual-e5-small",
+    "embeddingSignature": "Xenova/multilingual-e5-small:q8:mean:384:v2",
+    "warmup": {
+      "embeddingSignature": "Xenova/multilingual-e5-small:q8:mean:384:v2",
+      "reranker": "on",
+      "elapsedMs": 1923
+    },
+    "dataset": "/app/docs/evaluation/conversations.en.json",
+    "conversations": 2,
+    "conversationsPassed": 2,
+    "turns": 5,
+    "turnsPassed": 5,
+    "checks": 47,
+    "checksPassed": 47,
+    "calendar": "isolated local demo; Google credentials disabled",
+    "note": "Actual generated text answers with local tools and real retrieval. Billable text-model requests; no voice, microphone or speech recognition evaluated.",
+    "limitations": "Freshly authored multi-turn scenarios, separate from the 54 retrieval cases; once used for tuning they are regression tests, not permanently held-out evidence. Rule-based claim/citation checks are bounded diagnostics, not proof that every statement is entailed. Inspect transcripts and source excerpts in failures. Disposable database schema removed after evaluation.",
+    "regradedAt": "2026-09-16T14:28:37.797Z",
+    "regradeReason": "Timezone assertion now accepts both actual offered start and end bounds. Recorded09:00–17:00Yerevan range is supported by09:00firststart/17:00lastend. Only timezone check rerun against recorded tool evidence; no additional model requests. Original report preserved alongside.",
+    "artifact": "artifacts/conversation-evaluation-live-text.json"
+  },
+  "liveVoice": {
+    "verifiedAt": "2026-09-16T14:29:16.322Z",
+    "provider": "gemini",
+    "model": "gemini-3.1-flash-live-preview",
+    "transport": "synthetic text input -> actual Gemini native audio and transcript",
+    "microphone": false,
+    "speechRecognition": false,
+    "liveInterruptionTested": false,
+    "checks": [
+      {
+        "name": "provider-completed",
+        "pass": true
+      },
+      {
+        "name": "native-audio-received",
+        "pass": true
+      },
+      {
+        "name": "assistant-transcript-received",
+        "pass": true
+      },
+      {
+        "name": "real-knowledge-tool-used",
+        "pass": true
+      },
+      {
+        "name": "active-warranty-source",
+        "pass": true
+      },
+      {
+        "name": "correct-warranty-term",
+        "pass": true
+      },
+      {
+        "name": "spoken-source-attribution",
+        "pass": true
+      },
+      {
+        "name": "no-side-effect-actions",
+        "pass": true
+      },
+      {
+        "name": "english-response",
+        "pass": true
+      }
+    ],
+    "pass": true,
+    "audioBytes": 864002,
+    "elapsedMs": 22860,
+    "metrics": [
+      {
+        "name": "connection_ready",
+        "value": 348,
+        "unit": "ms"
+      },
+      {
+        "name": "first_input_to_first_audio",
+        "value": 4384,
+        "unit": "ms"
+      }
+    ],
+    "transcript": "According to our \"Repair warranty\" document, we provide a 90-calendar-day warranty on performed work and parts installed by us. This starts from the date of handover, though external damage and misuse are excluded. You can refer to the \"Warranty terms\" section for more details. Is there anything else I can help you with?",
+    "note": "One bounded provider connection; real local RAG/tools in an isolated schema. Google credentials disabled and no external-write tools exposed. Microphone, acoustic playback and real-user barge-in are not covered. Provider interruption/error behavior is covered by deterministic adapter/harness tests.",
+    "artifacts": ["artifacts/repair-voice-proof.json", "artifacts/repair-voice-proof.wav"]
+  },
+  "limitations": [
+    "The conversation dataset has now informed fixes and is regression coverage, not an untouched held-out benchmark.",
+    "The live text proof covers two conversations/five turns, not the full eleven-conversation suite.",
+    "Voice used synthetic text input, not a microphone or speech recognition. Interruption and provider errors were verified with mocks only.",
+    "All evaluation database schemas were disposable, calendar mode was rehearsal, and Google Calendar was not called."
+  ],
+  "livePhoto": {
+    "provider": "gemini",
+    "model": "gemini-2.5-flash",
+    "fixture": "Synthetic Relay Wash W100 / MODEL W100 / ERROR E21 label",
+    "elapsedMs": 1606,
+    "result": {
+      "appliance": "washing-machine",
+      "model": "W100",
+      "errorCode": "E21",
+      "uncertainties": []
+    },
+    "passed": true,
+    "limitations": "One synthetic legible label. Not a benchmark for real camera photos or damaged labels."
+  }
+}

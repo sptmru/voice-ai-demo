@@ -28,8 +28,10 @@ type GoogleEvent = {
   id?: string;
   htmlLink?: string;
   status?: string;
-  start?: { dateTime?: string };
-  end?: { dateTime?: string };
+  etag?: string;
+  transparency?: string;
+  start?: { dateTime?: string; date?: string };
+  end?: { dateTime?: string; date?: string };
 };
 const minute = 60_000;
 const day = 24 * 60 * minute;
@@ -220,10 +222,18 @@ export class CalendarService {
     }
   }
   private async google(path: string, init: RequestInit = {}): Promise<Response> {
+    const extraHeaders: Record<string, string> = {};
+    new Headers(init.headers).forEach((value, name) => {
+      extraHeaders[name] = value;
+    });
     const send = async () =>
       this.request(`https://www.googleapis.com/calendar/v3${path}`, {
         ...init,
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${await this.accessToken()}` },
+        headers: {
+          ...extraHeaders,
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${await this.accessToken()}`,
+        },
       });
     let response = await send();
     if (response.status === 401) {
@@ -371,6 +381,196 @@ export class CalendarService {
       );
     return this.bookingResult(await this.json(response), eventId, slot);
   }
+  private eventPath(eventId: string) {
+    if (!/^(?:demo-)?[a-f0-9]{64}$/.test(eventId))
+      throw new CalendarError('INVALID_EVENT', 'Invalid appointment reference.');
+    return `/calendars/${encodeURIComponent(this.env.GOOGLE_CALENDAR_ID ?? '')}/events/${encodeURIComponent(eventId)}`;
+  }
+  private assertEventIdentity(input: { sessionId: string; bookingKey: string; eventId: string }) {
+    const expected = createHash('sha256')
+      .update(JSON.stringify([input.sessionId, input.bookingKey]))
+      .digest('hex');
+    if (input.eventId !== (this.status().configured ? expected : `demo-${expected}`))
+      throw new CalendarError('INVALID_EVENT', 'The calendar event does not belong to this appointment.');
+  }
+  private async busyExcept(start: string, end: string, excludeEventId: string): Promise<CalendarSlot[]> {
+    const result: CalendarSlot[] = [];
+    let pageToken: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const params = new URLSearchParams({
+        timeMin: start,
+        timeMax: end,
+        singleEvents: 'true',
+        showDeleted: 'false',
+        maxResults: '2500',
+        ...(pageToken ? { pageToken } : {}),
+      });
+      const response = await this.google(
+        `/calendars/${encodeURIComponent(this.env.GOOGLE_CALENDAR_ID!)}/events?${params}`,
+      );
+      if (!response.ok) throw new CalendarError('UNAVAILABLE', 'Calendar availability could not be checked.');
+      const body = await this.json(response);
+      if (!Array.isArray(body.items))
+        throw new CalendarError('INVALID_RESPONSE', 'Calendar availability could not be checked.');
+      for (const event of body.items as GoogleEvent[]) {
+        if (
+          event.id === excludeEventId ||
+          event.status === 'cancelled' ||
+          event.transparency === 'transparent'
+        )
+          continue;
+        const a =
+          event.start?.dateTime ??
+          (event.start?.date ? new Date(this.localInstant(event.start.date, 0)).toISOString() : '');
+        const b =
+          event.end?.dateTime ??
+          (event.end?.date ? new Date(this.localInstant(event.end.date, 0)).toISOString() : '');
+        if (!Number.isFinite(Date.parse(a)) || !Number.isFinite(Date.parse(b)))
+          throw new CalendarError('INVALID_RESPONSE', 'Calendar availability could not be checked.');
+        result.push({ start: a, end: b });
+      }
+      pageToken = body.nextPageToken;
+      if (!pageToken) return result;
+    }
+    throw new CalendarError('UNAVAILABLE', 'Calendar availability requires a narrower review.');
+  }
+  async reschedule(
+    input: CalendarSlot & {
+      sessionId: string;
+      bookingKey: string;
+      eventId: string;
+      previousStart: string;
+      previousEnd: string;
+    },
+  ): Promise<CalendarBooking> {
+    const work = this.queue.then(async () => {
+      this.assertConfiguration();
+      this.assertEventIdentity(input);
+      const slot = { start: new Date(input.start).toISOString(), end: new Date(input.end).toISOString() };
+      const duration = (Date.parse(slot.end) - Date.parse(slot.start)) / minute;
+      const configured = this.status().configured;
+      const key = input.eventId.replace(/^demo-/, '');
+      let existing: GoogleEvent | undefined;
+      let prior = this.demoBookings.get(key);
+      if (configured) {
+        const response = await this.google(this.eventPath(input.eventId));
+        if (response.status === 404 || response.status === 410)
+          throw new CalendarError('NOT_FOUND', 'Calendar appointment no longer exists.');
+        if (!response.ok)
+          throw new CalendarError('UNAVAILABLE', 'Calendar appointment could not be verified.');
+        existing = await this.json(response);
+        if (existing?.status === 'cancelled')
+          throw new CalendarError('NOT_FOUND', 'Calendar appointment has been cancelled.');
+        if (existing?.start?.dateTime && existing.end?.dateTime)
+          prior = {
+            start: new Date(existing.start.dateTime).toISOString(),
+            end: new Date(existing.end.dateTime).toISOString(),
+            provider: 'google',
+            status: 'confirmed',
+            eventId: input.eventId,
+          };
+        if (!prior)
+          throw new CalendarError('INVALID_RESPONSE', 'Calendar appointment could not be verified.');
+      }
+      if (prior?.start === slot.start && prior.end === slot.end)
+        return configured ? this.bookingResult(existing!, input.eventId, slot) : prior;
+      if (
+        prior &&
+        (Date.parse(prior.start) !== Date.parse(input.previousStart) ||
+          Date.parse(prior.end) !== Date.parse(input.previousEnd))
+      )
+        throw new CalendarError(
+          'EXTERNAL_CHANGE',
+          'The appointment changed externally. Ask an operator to verify it.',
+        );
+      if (
+        !this.candidates(this.dateAt(Date.parse(slot.start)), 1, duration).some(
+          (s) => s.start === slot.start && s.end === slot.end,
+        )
+      )
+        throw invalid();
+      const busy = configured
+        ? await this.busyExcept(slot.start, slot.end, input.eventId)
+        : [...this.demoBookings.entries()].filter(([id]) => id !== key).map(([, value]) => value);
+      if (busy.some((b) => overlaps(slot, b)))
+        throw new CalendarError(
+          'SLOT_UNAVAILABLE',
+          'That time is no longer available. Please choose another slot.',
+        );
+      if (!configured) {
+        const result: CalendarBooking = { ...slot, provider: 'demo', status: 'demo', eventId: input.eventId };
+        this.demoBookings.set(key, result);
+        return result;
+      }
+      const response = await this.google(`${this.eventPath(input.eventId)}?sendUpdates=none`, {
+        method: 'PATCH',
+        headers: existing?.etag ? { 'If-Match': existing.etag } : {},
+        body: JSON.stringify({
+          start: { dateTime: slot.start, timeZone: this.status().timeZone },
+          end: { dateTime: slot.end, timeZone: this.status().timeZone },
+        }),
+      });
+      if (response.status === 412)
+        throw new CalendarError(
+          'EXTERNAL_CHANGE',
+          'The appointment changed externally. Ask an operator to verify it.',
+        );
+      if (!response.ok)
+        throw new CalendarError(
+          'UPDATE_FAILED',
+          'Calendar did not confirm the change. Retry the same change to verify its status.',
+        );
+      return this.bookingResult(await this.json(response), input.eventId, slot);
+    });
+    this.queue = work.catch(() => undefined);
+    return work;
+  }
+  async cancel(input: {
+    sessionId: string;
+    bookingKey: string;
+    eventId: string;
+    previousStart: string;
+    previousEnd: string;
+  }): Promise<{ provider: 'google' | 'demo'; eventId: string; status: 'cancelled' }> {
+    const work = this.queue.then(async () => {
+      this.assertConfiguration();
+      this.assertEventIdentity(input);
+      const result = {
+        provider: this.status().provider,
+        eventId: input.eventId,
+        status: 'cancelled' as const,
+      };
+      if (!this.status().configured) {
+        this.demoBookings.delete(input.eventId.replace(/^demo-/, ''));
+        return result;
+      }
+      const response = await this.google(this.eventPath(input.eventId));
+      if ([404, 410].includes(response.status)) return result;
+      if (!response.ok) throw new CalendarError('UNAVAILABLE', 'Calendar appointment could not be verified.');
+      const existing: GoogleEvent = await this.json(response);
+      if (existing.status === 'cancelled') return result;
+      if (
+        Date.parse(existing.start?.dateTime ?? '') !== Date.parse(input.previousStart) ||
+        Date.parse(existing.end?.dateTime ?? '') !== Date.parse(input.previousEnd)
+      )
+        throw new CalendarError(
+          'EXTERNAL_CHANGE',
+          'The appointment changed externally. Ask an operator to verify it.',
+        );
+      const removed = await this.google(`${this.eventPath(input.eventId)}?sendUpdates=none`, {
+        method: 'DELETE',
+        headers: existing.etag ? { 'If-Match': existing.etag } : {},
+      });
+      if (![204, 404, 410].includes(removed.status))
+        throw new CalendarError(
+          removed.status === 412 ? 'EXTERNAL_CHANGE' : 'CANCELLATION_FAILED',
+          'Calendar did not confirm cancellation. Retry the same cancellation to verify its status.',
+        );
+      return result;
+    });
+    this.queue = work.catch(() => undefined);
+    return work;
+  }
   private bookingResult(event: GoogleEvent, eventId: string, slot: CalendarSlot): CalendarBooking {
     if (
       !event ||
@@ -396,4 +596,17 @@ export class CalendarService {
 }
 
 let singleton: CalendarService | undefined;
-export const getCalendarService = () => (singleton ??= new CalendarService());
+let rehearsal: CalendarService | undefined;
+export const getCalendarService = (mode?: 'rehearsal' | 'live') => {
+  if (mode === 'rehearsal')
+    return (rehearsal ??= new CalendarService({
+      env: { GOOGLE_CALENDAR_TIME_ZONE: process.env.GOOGLE_CALENDAR_TIME_ZONE },
+    }));
+  const service = (singleton ??= new CalendarService());
+  if (mode === 'live' && !service.status().configured)
+    throw new CalendarError(
+      'LIVE_UNAVAILABLE',
+      'Live booking requires a configured Google Calendar. Switch to Rehearsal or configure the integration.',
+    );
+  return service;
+};

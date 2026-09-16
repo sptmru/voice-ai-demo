@@ -21,7 +21,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "rag:evaluate": "tsx --env-file-if-exists=.env scripts/evaluate-rag.ts",
-    "rag:reindex": "tsx --env-file-if-exists=.env scripts/reindex-knowledge.ts"
+    "rag:reindex": "tsx --env-file-if-exists=.env scripts/reindex-knowledge.ts",
+    "eval:conversations": "tsx --env-file-if-exists=.env scripts/evaluate-conversations.ts",
+    "live:repair": "tsx --env-file-if-exists=.env scripts/live-repair.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

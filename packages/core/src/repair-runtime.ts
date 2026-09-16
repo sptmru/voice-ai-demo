@@ -62,7 +62,7 @@ export async function repairMessage(
   }
   if (model) context.model = canonicalRepairModel(model);
   if (
-    /не\s+(?:слива|работа|включ|охлажда|мороз|суш|гре|набира|отжима)|теч[её]т|протеч|ошибк|error|won.t|doesn.t|leak|not drain|not cool|неисправн|сломал/i.test(
+    /не\s+(?:слива|работа|включ|охлажда|мороз|суш|гре|набира|отжима)|теч[её]т|протеч|ошибк|error|won.t|doesn.t|leak|not drain|not cool|not fill|not start|shakes|vibrat|неисправн|сломал/i.test(
       text,
     )
   )
@@ -84,17 +84,73 @@ export async function repairMessage(
       'Stop using the appliance. Do not open its housing or touch wet wiring. Disconnect power if it is safe; contact emergency services if there is immediate danger. I have passed your description to an operator.',
     );
   }
+  const pending = (await repo.getConfirmations(session.id)).find(
+    (c) => c.status === 'pending' && Date.parse(c.expiresAt) > Date.now(),
+  );
+  if (pending && /^(?:yes|okay|ok|confirm|approve|да)\b/i.test(text))
+    return say(
+      'Please review and confirm the approval card. A typed or spoken reply cannot approve this action.',
+    );
+  if (/do not book|don't book|changed my mind|stop booking|never mind|не записывай/i.test(text)) {
+    await save({ bookingRequested: false, rescheduling: false });
+    return say(
+      'I have stopped choosing a booking. No new appointment has been made. If you already have a booking, use its cancellation card to cancel it.',
+    );
+  }
   const jobId = text.match(/\bREP-[A-Z0-9]+\b/i)?.[0]?.toUpperCase();
+  if (/(?:approve|accept|agree).{0,30}(?:quote|estimate|repair)|соглас.{0,20}смет/i.test(text)) {
+    const id = jobId ?? repair.selectedJobId;
+    if (!id) return say('Please provide the repair reference so I can show the current quote.');
+    const job = await tool<any>('get_repair_status', { jobId: id });
+    if (job.status !== 'awaiting_approval' || job.estimateAMD === undefined || !job.revision)
+      return say(
+        'There is no current quote awaiting approval for that repair. Ask an operator to review it.',
+      );
+    await tool('approve_repair_quote', {
+      jobId: id,
+      expectedRevision: job.revision,
+      expectedEstimateAMD: job.estimateAMD,
+    });
+    return say(
+      `Please review the approval card for repair ${id}: ${job.estimateAMD} AMD. The repair is not approved until you confirm the card.`,
+    );
+  }
+  if (
+    /(?:cancel|отмен).{0,30}(?:appointment|booking|visit|запис)|^(?:cancel|отмени)(?: it)?[.! ]*$/i.test(
+      text,
+    ) &&
+    !/how|policy|what|как/i.test(text)
+  ) {
+    const appointment = await tool<any>('get_appointment');
+    if (appointment.status === 'cancelled') return say('This appointment is already cancelled.');
+    await tool('cancel_appointment', {
+      appointmentId: appointment.id,
+      expectedRevision: appointment.revision,
+    });
+    return say(
+      'Please review the cancellation card. Your appointment remains booked until you confirm the cancellation.',
+    );
+  }
+  const moveBooking =
+    /reschedul|move.{0,25}(?:appointment|booking)|change.{0,20}(?:time|appointment)|перенес/i.test(text);
+  if (moveBooking) await save({ rescheduling: true, bookingRequested: true });
   if (jobId || /статус|что с ремонт|готов.{0,12}ремонт|repair status|ready yet/i.test(text)) {
     const id = jobId ?? repair.selectedJobId;
     if (!id)
       return say('Please provide the repair reference. Fictional repair REP-1042 is available in this demo.');
     const job = await tool<RepairState['jobs'][number]>('get_repair_status', { jobId: id });
-    const status = {
-      awaiting_approval: 'awaiting quote approval',
-      in_progress: 'in progress',
-      ready: 'ready for collection',
-    }[job.status];
+    const status: string =
+      (
+        {
+          scheduled: 'diagnosis scheduled',
+          diagnosing: 'being diagnosed',
+          completed: 'completed',
+          cancelled: 'cancelled',
+          awaiting_approval: 'awaiting quote approval',
+          in_progress: 'in progress',
+          ready: 'ready for collection',
+        } as Record<string, string>
+      )[job.status] ?? job.status;
     const reply = `Demo repair ${job.id}, ${job.model}: ${status}. ${job.note}${job.estimateAMD !== undefined ? ` Quote: ${job.estimateAMD} AMD${job.diagnosisCreditAMD ? `, the previously paid ${job.diagnosisCreditAMD} AMD diagnosis fee is credited if you approve the repair; remaining estimate ${job.estimateAMD - job.diagnosisCreditAMD} AMD` : ''}.` : ''} ${job.readyAt ? `Recorded completion date: ${job.readyAt}.` : 'No confirmed completion date.'} This is fictional demo data.`;
     await finish(
       'Repair status check',
@@ -138,11 +194,14 @@ export async function repairMessage(
       );
     const current = await repo.getSession(session.id);
     const business = current.snapshot.business!;
+    const appointment = await repo.getAppointment?.(session.id);
     const prior = (await repo.getActions(session.id)).find((a) => a.kind === 'appointment');
-    if (prior) {
-      const record = prior.input as Record<string, unknown>;
+    if (appointment?.status === 'cancelled')
+      return say('Your appointment is cancelled. Start a new conversation to arrange a new diagnosis.');
+    if ((appointment || prior) && !repair.rescheduling) {
+      const record = appointment ?? (prior!.input as Record<string, unknown>);
       return say(
-        `${record.provider === 'google' ? 'Booking confirmed in Google Calendar' : 'Local demo booking saved'}: ${slotLabel({ start: String(record.start) }, business.calendarTimeZone ?? 'Asia/Yerevan')}. Contact an operator to change the time. This is a diagnosis appointment, without a promised repair completion date.`,
+        `${record.provider === 'google' ? 'Booking confirmed in Google Calendar' : 'Local demo booking saved'}: ${slotLabel({ start: String(record.start) }, business.calendarTimeZone ?? 'Asia/Yerevan')}. You can ask to reschedule or cancel it. This is a diagnosis appointment, without a promised repair completion date.`,
       );
     }
     const serviceId = /на дом|выезд|home visit/i.test(text)
@@ -165,6 +224,18 @@ export async function repairMessage(
       const slot = business.offeredSlots?.[Number(selection) - 1];
       if (!slot || Number(selection) > 5)
         return say('First ask for available times, then choose one of the offered options.');
+      if (repair.rescheduling) {
+        const record = appointment ?? (await tool<any>('get_appointment'));
+        await tool('reschedule_appointment', {
+          appointmentId: record.id,
+          expectedRevision: record.revision,
+          ...slot,
+        });
+        await save({ rescheduling: false });
+        return say(
+          `Please confirm the rescheduling card for ${slotLabel(slot, business.calendarTimeZone ?? 'Asia/Yerevan')}. The existing appointment has not changed yet.`,
+        );
+      }
       const action = await tool<Record<string, unknown>>('book_appointment', { serviceId, ...slot });
       const record = action.input as Record<string, unknown>;
       const reply = `${record.provider === 'google' ? 'Booking confirmed in Google Calendar' : 'Local demo booking saved'}: ${slotLabel(slot, business.calendarTimeZone ?? 'Asia/Yerevan')}. ${record.provider === 'demo' ? 'No external calendar event was created. ' : ''}This is a diagnosis appointment, not a promised repair completion time.`;
@@ -177,7 +248,10 @@ export async function repairMessage(
       await say(reply);
       return { text: reply, outcome };
     }
-    const date = requestedBusinessDate(text, getCalendarService().status().timeZone);
+    const date = requestedBusinessDate(
+      text,
+      getCalendarService(session.mode ?? 'rehearsal').status().timeZone,
+    );
     const partOfDay = /после обеда|днем|днём|afternoon/i.test(text)
       ? 'afternoon'
       : /утр|morning/i.test(text)
