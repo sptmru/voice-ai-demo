@@ -1,3 +1,4 @@
+import { createRepairTools, isRepairScenario } from './repair-tools.js';
 import { z } from 'zod';
 import {
   createBusinessTools,
@@ -53,6 +54,7 @@ function define<T>(
 export function createTools(): ToolDefinition[] {
   return [
     ...createBusinessTools(),
+    ...createRepairTools(),
     ...createHandoffTools(),
     define(
       'get_customer',
@@ -125,6 +127,37 @@ export function createTools(): ToolDefinition[] {
       async ({ query, limit }, c) => {
         await c.emit('retrieval.started', { query }, undefined, c.callId);
         const start = Date.now();
+        if (isRepairScenario(c.session.scenarioId)) {
+          const repair = c.session.snapshot.repair!;
+          const result = c.rag.retrieve
+            ? await c.rag.retrieve({
+                query,
+                limit,
+                domain: 'repair',
+                context: {
+                  appliance: repair.appliance,
+                  model: repair.model,
+                  previousQuery: repair.previousQuery,
+                },
+              })
+            : {
+                status: 'insufficient' as const,
+                query,
+                rewrittenQuery: query,
+                chunks: [],
+                reason: 'Evidence-aware retrieval is unavailable. Please ask an operator.',
+              };
+          await c.repo.updateSession(c.session.id, {
+            snapshot: { ...c.session.snapshot, repair: { ...repair, previousQuery: query } },
+          });
+          await c.emit(
+            'retrieval.completed',
+            { ...result, count: result.chunks.length },
+            Date.now() - start,
+            c.callId,
+          );
+          return result;
+        }
         const chunks = await c.rag.search(query, limit);
         await c.emit(
           'retrieval.completed',
@@ -241,6 +274,12 @@ export function createTools(): ToolDefinition[] {
           if (input.intent !== businessIntent(c.session.scenarioId))
             throw new Error('Outcome intent does not match this scenario');
           await validateBusinessOutcome(c.session, input.resolved, actions);
+        }
+        if (isRepairScenario(c.session.scenarioId) && input.resolved) {
+          const booking = actions.find((a) => a.kind === 'appointment')!.input as Record<string, unknown>;
+          input.diagnosis = `${booking.provider === 'google' ? 'Diagnosis appointment confirmed in Google Calendar' : 'Local demo diagnosis booking saved'}: ${String(booking.start)}. Appliance repair is not confirmed.`;
+          input.nextAction =
+            'Attend the diagnosis appointment; the quote and repair require separate customer approval.';
         }
         const completedTools = (await c.repo.getEvents(c.session.id))
           .filter(

@@ -341,11 +341,27 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     res.sendStatus(204);
   });
   app.post('/api/knowledge/search', async (req, res) => {
-    const { query } = z
-      .object({ query: z.string().trim().min(1).max(1000) })
+    const { query, domain, context } = z
+      .object({
+        query: z.string().trim().min(1).max(1000),
+        domain: z.enum(['repair', 'telecom', 'general']).optional(),
+        context: z
+          .object({
+            appliance: z.string().trim().min(1).max(80).optional(),
+            model: z.string().trim().min(1).max(80).optional(),
+            previousQuery: z.string().trim().min(1).max(1000).optional(),
+          })
+          .strict()
+          .optional(),
+      })
       .strict()
       .parse(req.body);
-    res.json(await rag.search(query));
+    // Preserve the legacy array response for callers that omit domain/context.
+    res.json(
+      (domain || context) && rag.retrieve
+        ? await rag.retrieve({ query, domain, context })
+        : await rag.search(query),
+    );
   });
   const errorHandler = (error: unknown, req: Request, res: Response, _next: NextFunction) => {
     const e = error as { status?: number; code?: string; name?: string };

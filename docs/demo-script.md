@@ -1,5 +1,20 @@
 # Client demo walkthroughs
 
+## Main demo: appliance repair
+
+1. Open **Appliance troubleshooting → Start in text**. Send `My Relay Wash W100 washing machine will not drain and shows E21. What should I do?`. Open a source to show the instruction and its version. A symptom is not a confirmed pump failure.
+2. Ask `What is the repair warranty?`. Show the current 90-day policy and the retained appliance context. The archived 30-day warranty is excluded from retrieval.
+3. Ask `How much does diagnosis cost?`. Prices come from the service catalog: workshop diagnosis is 5000 AMD, credited toward an approved repair; a home visit is 8000 AMD, without a repair credit. Then ask `Book a workshop appointment`, review the times and say `Choose option 1`.
+4. Show the booking result and calendar mode. With no credentials this is a local demo booking; with Google configured it creates a real event. Use empty calendar credentials for rehearsals that should not create real events. No invitation email is sent.
+5. In **Check repair status**, ask `Check REP-1042`: the quote is awaiting approval and no completion date is confirmed. These are fictional records, not an integration with a workshop ERP.
+6. Show the limits: `What does error E21 mean?` in a new session requires a model; `What is the compressor power of Relay Cool C100 in watts?` has no supporting specification. Ask for an operator and show the transferred context.
+
+To demonstrate knowledge updates, upload a short English Markdown document to the `repair` domain with a unique fact and version metadata. Search finds it immediately. When replacing a policy, remove or archive the prior version; overlapping active versions with the same `policyKey` prevent a definitive answer. Seed restores built-in documents and preserves user uploads. All Relay appliance models are fictional; these documents are not real manufacturer manuals.
+
+The interface, scenario suggestions and default replies are in English. Russian questions remain part of the multilingual retrieval evaluation.
+
+## Additional legacy scenarios
+
 ## Business demo: appointment and handoff
 
 1. Open **Demo** and choose **Book an appointment**. Start voice, or use **Start in text** for the deterministic rehearsal. In text mode ask `Show available times`, then `Book option 1` after reading the offered times.

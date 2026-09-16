@@ -6,7 +6,7 @@ import { pool } from '../packages/db/src/index.js';
 import { migrate } from '../packages/db/src/migrate.js';
 import { demoCustomer, scenarioSnapshot } from '../packages/db/src/fixtures.js';
 import { RagService } from '../packages/rag/src/index.js';
-import { scenarioIds } from '../packages/core/src/domain.js';
+import { scenarioIds, type KnowledgeMetadata } from '../packages/core/src/domain.js';
 
 export async function seedOperationalData(database: Pool = pool): Promise<void> {
   const client = await database.connect();
@@ -50,9 +50,38 @@ export async function seedKnowledge(database: Pool = pool): Promise<void> {
   for (const file of (await readdir(directory)).filter((name) => name.endsWith('.md')).sort()) {
     const content = await readFile(new URL(file, directory), 'utf8');
     const title = /^#\s+(.+)$/m.exec(content)?.[1] ?? file;
-    const document = await rag.ingest({ title, content, source: `docs/knowledge/${file}`, type: 'markdown' });
+    const document = await rag.ingest({
+      title,
+      content,
+      source: `docs/knowledge/${file}`,
+      type: 'markdown',
+      metadata: { domain: 'telecom', status: 'active', version: '1' },
+    });
     console.log(`Indexed ${document.title}: ${document.chunkCount} chunks`);
   }
+  await seedRepairKnowledge(database);
+}
+
+/** Also used by the isolated RAG evaluation: never deletes user uploads. */
+export async function seedRepairKnowledge(database: Pool = pool): Promise<void> {
+  const rag = new RagService(database);
+  const directory = new URL('../docs/knowledge/repair/', import.meta.url);
+  const manifest = JSON.parse(await readFile(new URL('manifest.json', directory), 'utf8')) as {
+    file: string;
+    metadata: KnowledgeMetadata;
+  }[];
+  for (const entry of manifest) {
+    const content = await readFile(new URL(entry.file, directory), 'utf8');
+    const title = /^#\s+(.+)$/m.exec(content)?.[1] ?? entry.file;
+    await rag.ingest({
+      title,
+      content,
+      source: `docs/knowledge/repair/${entry.file}`,
+      type: 'markdown',
+      metadata: entry.metadata,
+    });
+  }
+  console.log(`Indexed ${manifest.length} versioned repair documents`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -61,7 +90,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     await seedOperationalData();
     await seedKnowledge();
     console.log(
-      `Seed complete: Acme Ltd, ${scenarioIds.length} isolated scenario templates and telecom knowledge.`,
+      `Seed complete: ${scenarioIds.length} isolated scenario templates, repair and telecom knowledge.`,
     );
   })()
     .catch((error) => {

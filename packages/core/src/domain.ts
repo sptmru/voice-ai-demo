@@ -1,6 +1,15 @@
+import type { KnowledgeMetadata, RetrievalRequest, RetrievalResult } from './knowledge-domain.js';
+export type {
+  KnowledgeMetadata,
+  RetrievalRequest,
+  RetrievalResult,
+  RetrievalStatus,
+} from './knowledge-domain.js';
 import { z } from 'zod';
 
+export const repairScenarioIds = ['repair-advice', 'repair-booking', 'repair-status'] as const;
 export const scenarioIds = [
+  ...repairScenarioIds,
   'appointment-booking',
   'lead-qualification',
   'order-support',
@@ -13,8 +22,11 @@ export const scenarioIds = [
   'unknown',
 ] as const;
 export const telecomScenarioIds = scenarioIds.filter(
-  (id) => !['appointment-booking', 'lead-qualification', 'order-support'].includes(id),
-) as Exclude<(typeof scenarioIds)[number], 'appointment-booking' | 'lead-qualification' | 'order-support'>[];
+  (id) => ![...repairScenarioIds, 'appointment-booking', 'lead-qualification', 'order-support'].includes(id),
+) as Exclude<
+  (typeof scenarioIds)[number],
+  (typeof repairScenarioIds)[number] | 'appointment-booking' | 'lead-qualification' | 'order-support'
+>[];
 export const scenarioSchema = z.enum(scenarioIds);
 export type ScenarioId = z.infer<typeof scenarioSchema>;
 export const scenarios: {
@@ -26,6 +38,38 @@ export const scenarios: {
   result?: string;
   quickPrompts?: string[];
 }[] = [
+  {
+    id: 'repair-advice',
+    label: 'Appliance troubleshooting',
+    category: 'Relay Workshop',
+    description: 'Understand repair policies and prepare for diagnosis.',
+    result: 'A sourced answer and a clear next step',
+    prompt: 'My Relay Wash W100 washing machine will not drain and shows E21. What should I do?',
+    quickPrompts: [
+      'What is the repair warranty?',
+      'How much does diagnosis cost?',
+      'Book a workshop appointment',
+      'Talk to an operator',
+    ],
+  },
+  {
+    id: 'repair-booking',
+    label: 'Book a repair',
+    category: 'Relay Workshop',
+    description: 'Tell us about the appliance and choose an available time.',
+    result: 'Google Calendar booking or a local demo appointment',
+    prompt: 'I want to book a diagnosis for my Relay Wash W100 washing machine. It will not drain.',
+    quickPrompts: ['Show available times', 'Choose option 1', 'Talk to an operator'],
+  },
+  {
+    id: 'repair-status',
+    label: 'Check repair status',
+    category: 'Relay Workshop',
+    description: 'Look up a demo repair and understand the next step.',
+    result: 'Verified repair status without an invented completion date',
+    prompt: 'Check REP-1042',
+    quickPrompts: ['Check REP-1042', 'What is the repair warranty?', 'Talk to an operator'],
+  },
   {
     id: 'appointment-booking',
     label: 'Book a consultation',
@@ -175,7 +219,37 @@ export interface BusinessState {
   selectedOrderId?: string;
   pendingDeliveryAddress?: string;
 }
+export interface RepairState {
+  appliance?: 'washing-machine' | 'dishwasher' | 'refrigerator';
+  model?: string;
+  issue?: string;
+  previousQuery?: string;
+  address?: string;
+  region?: string;
+  bookingRequested?: boolean;
+  selectedJobId?: string;
+  services: {
+    id: string;
+    name: string;
+    durationMinutes: number;
+    priceAMD: number;
+    creditAgainstRepair: boolean;
+    location: 'workshop' | 'home';
+  }[];
+  jobs: {
+    id: string;
+    customerId: string;
+    appliance: string;
+    model: string;
+    status: 'awaiting_approval' | 'in_progress' | 'ready';
+    note: string;
+    estimateAMD?: number;
+    diagnosisCreditAMD?: number;
+    readyAt: string | null;
+  }[];
+}
 export interface Snapshot {
+  repair?: RepairState;
   business?: BusinessState;
   account: Account;
   calls: TelecomCall[];
@@ -186,6 +260,7 @@ export interface Snapshot {
 export const outcomeSchema = z.object({
   customer: z.string(),
   intent: z.enum([
+    'repair_support',
     'technical_support',
     'account_support',
     'appointment_booking',
@@ -256,6 +331,10 @@ export interface SupportSession {
   diagnosis: string | null;
 }
 export interface RetrievedChunk {
+  metadata?: KnowledgeMetadata;
+  page?: number;
+  headingPath?: string[];
+  rerankScore?: number;
   chunkId: string;
   documentId: string;
   document: string;
@@ -268,6 +347,7 @@ export interface RetrievedChunk {
   combinedScore: number;
 }
 export interface KnowledgeDocument {
+  metadata?: KnowledgeMetadata;
   id: string;
   title: string;
   source: string;
@@ -350,8 +430,15 @@ export interface Repository {
   ): Promise<void>;
 }
 export interface RetrievalService {
+  retrieve?(request: RetrievalRequest): Promise<RetrievalResult>;
   search(query: string, limit?: number): Promise<RetrievedChunk[]>;
-  ingest(input: { title: string; content: string; source: string; type: string }): Promise<KnowledgeDocument>;
+  ingest(input: {
+    title: string;
+    content: string;
+    source: string;
+    type: string;
+    metadata?: Partial<KnowledgeMetadata>;
+  }): Promise<KnowledgeDocument>;
   listDocuments(): Promise<KnowledgeDocument[]>;
   deleteDocument(id: string): Promise<boolean>;
 }

@@ -60,6 +60,7 @@ test('knowledge search exposes vector and lexical evidence', async ({ page }) =>
     .getByRole('button', { name: /Knowledge base/ })
     .first()
     .click();
+  await page.getByLabel('Knowledge domain').selectOption('telecom');
   await page.getByLabel('Search knowledge').fill('SIP 403 outbound UK carrier rejection');
   await page.getByRole('button', { name: 'Search knowledge', exact: true }).click();
   await expect(page.locator('.search-results .source-card').first()).toBeVisible({ timeout: 100000 });

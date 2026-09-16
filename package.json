@@ -19,7 +19,9 @@
     "live:fixture": "tsx --env-file-if-exists=.env scripts/voice-fixture.ts",
     "live:browser": "tsx scripts/live-browser.ts",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "rag:evaluate": "tsx --env-file-if-exists=.env scripts/evaluate-rag.ts",
+    "rag:reindex": "tsx --env-file-if-exists=.env scripts/reindex-knowledge.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3.8.1",

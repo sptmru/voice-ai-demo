@@ -1,19 +1,21 @@
 # Relay — Voice AI Demo Studio
 
-A client demo for appointment booking, lead qualification, order support and technical telecom support. Talk to an agent, see its actions, inspect the saved result, and hand the conversation to a human operator. The telecom foundation was built from [the implementation brief](docs/voice-ai-support-engineer-codex-prompt.pdf).
+A voice and text demo for **Relay Workshop**, a fictional appliance repair service in Yerevan. Ask about a fault, inspect the supporting documents, book diagnosis, check a repair request, or hand the conversation to an operator. The original telecom foundation remains available under additional scenarios.
 
 ## Client demonstration
 
-**Demo** opens the presentation view: choose a business scenario, start voice or choose **Start in text**, and follow the suggested messages. **Live workspace** retains the detailed tool, source and diagnostic view. The three new business scenarios use the same persisted sessions, events and tool executor as voice.
+**Demo** opens three repair scenarios; choose voice or **Start in text**:
 
-- **Book an appointment:** choose a consultation, inspect available slots and confirm one. With Google Calendar configured, the agent checks live availability and creates an actual calendar event. Without credentials it explicitly saves a local demo booking. See [Google Calendar setup](docs/calendar.md).
-- **Meet your next customer:** collect the actual need, budget and timeline into a local lead record, with an optional consultation booking.
-- **Help with an order:** inspect a fictional customer-owned order and confirm a delivery-change request. The request is saved locally for review; actual fulfillment is unchanged.
-- **Talk to a person:** transfer the saved context into **Operator desk**, accept the conversation and reply as a human. AI tools and voice stop at transfer. The desk is an owner-scoped browser demonstration, not production staff authentication or a telephone transfer.
+- **Appliance troubleshooting:** describe a washing machine, dishwasher or refrigerator issue. Follow up with a warranty question; the agent keeps the appliance context and shows current sources. Unknown model/code combinations require clarification.
+- **Book a repair:** describe the appliance and symptoms, then explicitly choose an offered diagnostic appointment. Google Calendar creates a real event when configured; without credentials the result is a labelled local demo booking. Home visits require a Yerevan address. See [calendar setup](docs/calendar.md).
+- **Check repair status:** inspect fictional customer-owned request `REP-1042`. Its quote is awaiting approval; no completion date or parts stock is invented.
+- **Talk to a person:** transfer the saved conversation into **Operator desk**, accept it and reply. AI handling stops after transfer. This is an owner-scoped browser demonstration, not production staff authentication or telephone transfer.
 
-The original seven telecom scenarios remain available. The no-key text path is still a deterministic, finite workflow; voice models use scenario-specific instructions and the same validated tools. See the [demo walkthrough](docs/demo-script.md).
+Repair prices, jobs and the Relay appliance models are explicitly fictional. Text mode uses a finite, extractive policy without an LLM key; voice uses scenario instructions and the same validated tools. Consultation, lead, order and seven telecom scenarios remain under **Other scenarios**. See the [walkthrough](docs/demo-script.md).
 
-Existing installations need the additive `004_handoff.sql` migration and an operational reseed for the three new scenario templates. The startup commands below perform both. Migration/seed preserve existing sessions and uploaded documents. Google Calendar events survive deletion of their local demo session.
+The knowledge base includes 16 current English repair documents, an archived warranty version and 10 telecom documents. RAG uses multilingual embeddings, RU/EN hybrid search, cross-encoder reranking, conversation context and evidence states (`supported`, `clarify`, `insufficient`, `conflict`). Sources show section, version and PDF page where available. See [RAG architecture and evaluation](docs/rag.md).
+
+**Existing installations:** run migrations through `005_knowledge_evidence.sql`, seed the new templates/documents, then run `pnpm rag:reindex` to rebuild existing uploads with the new embedding model. Review [reindex instructions](docs/rag-reindex.md). Old uploads have only stored passages; recovering the original PDF is necessary for faithful page citations. Sessions and uploads are preserved; historical citations remain snapshots of the earlier answer. These commands change the selected installation, so run them when deploying the update.
 
 ## Run locally
 
@@ -28,7 +30,7 @@ docker compose -f compose.yaml -f compose.app.yaml run --rm api pnpm db:seed
 docker compose -f compose.yaml -f compose.app.yaml up -d api web
 ```
 
-Open **http://localhost:3100** with the example `.env`, or `http://localhost:<PORT>` for your configured port. `PORT` selects the single host port for web, `/api`, SSE and voice; health is `/api/health` on that same address. API and PostgreSQL have **no published host ports**: Next.js reaches `api:3101`, and API reaches `db:5432` on the internal `database` Docker network. Web belongs to the separate default network; API joins both. The first seed downloads the quantized local BGE model; subsequent container runs use the `relay_models` volume. Model download requires network access, inference does not. Seeding is repeatable and preserves previous sessions and uploaded documents.
+Open **http://localhost:3100** with the example `.env`, or `http://localhost:<PORT>` for your configured port. `PORT` selects the single host port for web, `/api`, SSE and voice; health is `/api/health` on that same address. API and PostgreSQL have **no published host ports**: Next.js reaches `api:3101`, and API reaches `db:5432` on the internal `database` Docker network. Web belongs to the separate default network; API joins both. The first seed downloads multilingual E5; the first evidence query downloads the multilingual cross-encoder. Both run locally on CPU; subsequent container runs use the `relay_models` volume. Model download requires network access, inference does not. Seeding is repeatable and preserves previous sessions and uploaded documents.
 
 Database commands and integration tests run inside the API container. Host-only `pnpm dev` / `pnpm dev:api` require a separately accessible database via `DATABASE_URL`; they cannot connect to this private Docker database by localhost. A host frontend also needs an explicitly reachable `API_INTERNAL_URL`; the Compose API is internal by default.
 
@@ -36,7 +38,7 @@ Database credentials live once in `.env`: `POSTGRES_USER`, `POSTGRES_PASSWORD`, 
 
 For a public demo through Cloudflare, see [Tunnel setup](docs/deployment.md#cloudflare-tunnel): point the host-side tunnel to `http://127.0.0.1:<PORT>`. Changing `PORT` requires `docker compose -f compose.yaml -f compose.app.yaml up -d`; `restart` does not update port mappings. For direct local browser use also set `WEB_ORIGIN=http://localhost:<PORT>`; an HTTPS public origin does not change when only the local tunnel target port changes.
 
-Select **UK carrier incident → Start session → Try…**. The agent runs real local tools, retrieves four knowledge chunks, finds the incident, opens a persisted ticket, and records a validated outcome. **End session** produces the after-call view and saves selective customer memory. **Session history** reopens the full record from the same browser.
+Select **Appliance troubleshooting → Start in text** and send the suggested washing-machine question. Inspect the sources, ask about warranty, then ask to book diagnosis. **End session** produces the after-call view and saves selective customer memory. **Session history** reopens the full record from the same browser.
 
 **Start session** and **Reset session** automatically connect the selected voice provider when its key is configured. Allow microphone access when prompted. Missing credentials or denied microphone access leave the text workflow available; **Reconnect voice** retries a failed connection. Opening an old session from history does not start a new call.
 
@@ -52,12 +54,12 @@ Gemini was verified against the real API, including synthetic microphone speech 
 
 | Component                                  | Implementation                                                                                                                                                                            |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Operational systems                        | Real PostgreSQL persistence over fictional seeded telecom/account data; no actual carrier/CRM integration                                                                                 |
+| Operational systems                        | Real PostgreSQL persistence over fictional repair jobs, service catalog and legacy account data; no actual repair ERP, parts inventory or carrier integration                             |
 | Appointment calendar                       | Real Google OAuth, FreeBusy and event insertion when configured; explicit local demo fallback otherwise. No attendee invitations are sent. Live Google verification requires credentials. |
 | Leads and store orders                     | Real local lead and delivery-change request records over fictional customer/order data; no external CRM or fulfillment updates                                                            |
 | Human handoff                              | Persisted owner-scoped operator queue and browser text replies; stops AI voice/tools. No PSTN transfer or external dispatch                                                               |
 | Text conversation                          | Explicit, evidence-driven deterministic policy, no LLM key required; finite support workflows, not a general chatbot                                                                      |
-| Retrieval                                  | Actual local `Xenova/bge-small-en-v1.5`, 384-dimensional normalized embeddings, pgvector cosine + PostgreSQL full text, reciprocal-rank fusion                                            |
+| Retrieval                                  | Local multilingual E5 (384 dimensions), RU/EN full text + pgvector/RRF, multilingual cross-encoder, active/version/model filters and evidence admission                                   |
 | Tickets, callbacks, follow-ups, escalation | Real local records; no email, callback, paging or external CRM dispatch                                                                                                                   |
 | Sensitive reset                            | Explicit browser confirmation; simulated credential version changes atomically in session snapshot; never touches a live trunk                                                            |
 | Events and reports                         | Real persisted tool, retrieval, transcript, confirmation, timing and outcome events, replayed over SSE                                                                                    |
@@ -78,7 +80,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-Verified on 2026-09-16: **80 unit tests, 46 PostgreSQL/integration tests and 12 browser tests passed**, along with type checking and the production build. New Google Calendar HTTP calls were mocked; live calendar access and deployment of this extension remain unverified. Full evidence and limitations are in [validation](docs/validation.md).
+Current repair/RAG verification, evaluation results and limitations are recorded in [validation](docs/validation.md). Integration tests forcibly clear external provider credentials even when `.env` contains real keys. Run `pnpm rag:evaluate` in the API container for the 54-question isolated retrieval regression set.
 
 The production web build uses `.next-production`, separate from `.next` used by the dev server. Live verification scripts are documented in [providers](docs/providers.md); these make billed provider calls and are separate from automated fixture tests.
 

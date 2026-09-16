@@ -1,0 +1,1559 @@
+{
+  "summary": {
+    "evaluatedAt": "2026-09-16T13:25:46.089Z",
+    "embeddingModel": "Xenova/multilingual-e5-small",
+    "reranker": "on",
+    "cases": 54,
+    "passed": 54,
+    "sourceRecallAt3": 1,
+    "rawSourceRecallAt3": 0.9545454545454546,
+    "rawSourceRecallByLanguage": {
+      "ru": 0.9565217391304348,
+      "en": 0.9523809523809523
+    },
+    "admissionOverrides": {
+      "semantic": null,
+      "rerank": null
+    },
+    "statusAccuracy": 1,
+    "unsupportedRejected": 8,
+    "unsupportedTotal": 8,
+    "latencyP50Ms": 365,
+    "latencyP95Ms": 475,
+    "note": "Curated demo regression set; not a held-out benchmark. Local CPU, warm models; timing excludes indexing/downloads. Isolated database schema removed after evaluation."
+  },
+  "cases": [
+    {
+      "id": "repair-001",
+      "query": "Какие виды бытовой техники вы принимаете?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/service-scope.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 461,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Какие виды бытовой техники вы принимаете?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Приём техники",
+          "semanticScore": 0.8631639643712331,
+          "rerankScore": 0.8244403424549007
+        },
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Service coverage",
+          "semanticScore": 0.8191477196647496,
+          "rerankScore": 0.7418302501639298
+        },
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Телефоны, ноутбуки и другие исключения",
+          "semanticScore": 0.847378084219846,
+          "rerankScore": 0.20999202873742337
+        }
+      ]
+    },
+    {
+      "id": "repair-002",
+      "query": "Do you repair phones or laptops?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/service-scope.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 441,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Do you repair phones or laptops?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Phone and laptop repairs",
+          "semanticScore": 0.8894646101871043,
+          "rerankScore": 0.9995696839814282
+        },
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Телефоны, ноутбуки и другие исключения",
+          "semanticScore": 0.8443693425875646,
+          "rerankScore": 0.9481508062430095
+        }
+      ]
+    },
+    {
+      "id": "repair-003",
+      "query": "Можно ли вызвать мастера в Гюмри?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/service-scope.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 422,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Можно ли вызвать мастера в Гюмри?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Приём техники",
+          "semanticScore": 0.8094386571980452,
+          "rerankScore": 0.34138323057992903
+        },
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Home visit requirements",
+          "semanticScore": 0.7828988950493586,
+          "rerankScore": 0.31462736950578135
+        }
+      ]
+    },
+    {
+      "id": "repair-004",
+      "query": "Диагностика засчитывается в стоимость ремонта?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 376,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Диагностика засчитывается в стоимость ремонта?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Оплата диагностики",
+          "semanticScore": 0.9151468175825703,
+          "rerankScore": 0.9995325757269989
+        },
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Diagnostic fees",
+          "semanticScore": 0.8654949149194795,
+          "rerankScore": 0.9828620159057263
+        },
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "До начала ремонта",
+          "semanticScore": 0.8643359188432976,
+          "rerankScore": 0.25063147188138957
+        }
+      ]
+    },
+    {
+      "id": "repair-005",
+      "query": "If I decline repair, do I still pay for workshop diagnosis?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 432,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "If I decline repair, do I still pay for workshop diagnosis?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Diagnostic fees",
+          "semanticScore": 0.8998722135639843,
+          "rerankScore": 0.9999174458636718
+        },
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Оплата диагностики",
+          "semanticScore": 0.8431844559595435,
+          "rerankScore": 0.9780269972687395
+        },
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "До начала ремонта",
+          "semanticScore": 0.8250301167422873,
+          "rerankScore": 0.5458981283089943
+        }
+      ]
+    },
+    {
+      "id": "repair-006",
+      "query": "Is the home visit fee credited toward repair?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 329,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Is the home visit fee credited toward repair?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Diagnostic fees",
+          "semanticScore": 0.8815869983130704,
+          "rerankScore": 0.9975564644210418
+        },
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Оплата диагностики",
+          "semanticScore": 0.8137760375991158,
+          "rerankScore": 0.45288712430059275
+        }
+      ]
+    },
+    {
+      "id": "repair-007",
+      "query": "Какой срок гарантии на выполненный ремонт?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 338,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Какой срок гарантии на выполненный ремонт?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Срок и покрытие",
+          "semanticScore": 0.9179931380756994,
+          "rerankScore": 0.9995739627522768
+        },
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Warranty terms",
+          "semanticScore": 0.8637996830821232,
+          "rerankScore": 0.948494901440632
+        }
+      ]
+    },
+    {
+      "id": "repair-008",
+      "query": "Does your repair warranty cover an unrelated new fault?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 345,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does your repair warranty cover an unrelated new fault?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Warranty terms",
+          "semanticScore": 0.8521944792386957,
+          "rerankScore": 0.9982047807710759
+        },
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Срок и покрытие",
+          "semanticScore": 0.822309515200917,
+          "rerankScore": 0.9003454982195872
+        }
+      ]
+    },
+    {
+      "id": "repair-009",
+      "query": "Does the warranty cover installed spare parts?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 450,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does the warranty cover installed spare parts?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Срок и покрытие",
+          "semanticScore": 0.8052179565636126,
+          "rerankScore": 0.18817573229226317
+        },
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Warranty terms",
+          "semanticScore": 0.833604454994255,
+          "rerankScore": 0.13487940336835788
+        }
+      ]
+    },
+    {
+      "id": "repair-010",
+      "query": "Relay Wash W100 показывает E21, вода осталась в барабане. Что делать?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 452,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Relay Wash W100 показывает E21, вода осталась в барабане. Что делать?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 — вода в барабане и код E21",
+          "semanticScore": 0.9215365467168251,
+          "rerankScore": 0.9999809509266807
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8727177598231564,
+          "rerankScore": 0.9998135377477665
+        },
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "D100 — нет набора воды",
+          "semanticScore": 0.8767874249398366,
+          "rerankScore": 0.4239298551341037
+        }
+      ]
+    },
+    {
+      "id": "repair-011",
+      "query": "Can E21 on Relay Wash W100 prove that the pump needs replacement?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 449,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Can E21 on Relay Wash W100 prove that the pump needs replacement?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8978409912945353,
+          "rerankScore": 0.9999665360359828
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 — вода в барабане и код E21",
+          "semanticScore": 0.8656746549385079,
+          "rerankScore": 0.9994806661777523
+        },
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "D100 — нет набора воды",
+          "semanticScore": 0.8274870247351344,
+          "rerankScore": 0.5845966442099672
+        }
+      ]
+    },
+    {
+      "id": "repair-012",
+      "query": "Можно ли силой открыть запертую дверцу Relay Wash W100?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 443,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Можно ли силой открыть запертую дверцу Relay Wash W100?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 — вода в барабане и код E21",
+          "semanticScore": 0.8575072456857817,
+          "rerankScore": 0.9999486372945502
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8285833452418528,
+          "rerankScore": 0.9835750041159522
+        },
+        {
+          "source": "docs/knowledge/repair/fridge-cooling.md",
+          "section": "Слабое охлаждение",
+          "semanticScore": 0.8347709676487202,
+          "rerankScore": 0.8108302278759312
+        }
+      ]
+    },
+    {
+      "id": "repair-013",
+      "query": "Relay Wash W200 сильно скачет при отжиме. Что уточнить?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/washer-vibration.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 431,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Relay Wash W200 сильно скачет при отжиме. Что уточнить?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/washer-vibration.md",
+          "section": "W200 — сильная вибрация",
+          "semanticScore": 0.8856397015930253,
+          "rerankScore": 0.9993099571881462
+        },
+        {
+          "source": "docs/knowledge/repair/washer-vibration.md",
+          "section": "W200 vibration",
+          "semanticScore": 0.8703594102920448,
+          "rerankScore": 0.9775977646865226
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8239393899567504,
+          "rerankScore": 0.26118399894347333
+        }
+      ]
+    },
+    {
+      "id": "repair-014",
+      "query": "Does noise on Relay Wash W200 prove bearing failure?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/washer-vibration.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 475,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does noise on Relay Wash W200 prove bearing failure?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/washer-vibration.md",
+          "section": "W200 vibration",
+          "semanticScore": 0.893305077151221,
+          "rerankScore": 0.9999494002272021
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.865174728498584,
+          "rerankScore": 0.9453365944175404
+        },
+        {
+          "source": "docs/knowledge/repair/washer-vibration.md",
+          "section": "W200 — сильная вибрация",
+          "semanticScore": 0.8595397472381653,
+          "rerankScore": 0.9252979156117056
+        }
+      ]
+    },
+    {
+      "id": "repair-015",
+      "query": "Relay Cool C100 плохо охлаждает. Какие проверки можно сделать без разборки?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/fridge-cooling.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 306,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Relay Cool C100 плохо охлаждает. Какие проверки можно сделать без разборки?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/fridge-cooling.md",
+          "section": "Слабое охлаждение",
+          "semanticScore": 0.9001834303851309,
+          "rerankScore": 0.9999748443910504
+        },
+        {
+          "source": "docs/knowledge/repair/fridge-cooling.md",
+          "section": "Poor cooling",
+          "semanticScore": 0.8779071612760654,
+          "rerankScore": 0.9981958471749415
+        },
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "D100 — нет набора воды",
+          "semanticScore": 0.8503420920607235,
+          "rerankScore": 0.8878335833437567
+        }
+      ]
+    },
+    {
+      "id": "repair-016",
+      "query": "Can I use a sharp tool to defrost Relay Cool C100?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/fridge-cooling.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 307,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Can I use a sharp tool to defrost Relay Cool C100?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/fridge-cooling.md",
+          "section": "Poor cooling",
+          "semanticScore": 0.8710941595491282,
+          "rerankScore": 0.9999401847868569
+        },
+        {
+          "source": "docs/knowledge/repair/fridge-cooling.md",
+          "section": "Слабое охлаждение",
+          "semanticScore": 0.8397580003161491,
+          "rerankScore": 0.7489585580616702
+        }
+      ]
+    },
+    {
+      "id": "repair-017",
+      "query": "Relay Dish D100 не набирает воду. Что можно проверить?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/dishwasher-water.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 265,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Relay Dish D100 не набирает воду. Что можно проверить?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "D100 — нет набора воды",
+          "semanticScore": 0.9286376897995088,
+          "rerankScore": 0.9999803109878058
+        },
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "Dishwasher does not fill",
+          "semanticScore": 0.9015402735197852,
+          "rerankScore": 0.9999037905792336
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8631636594479803,
+          "rerankScore": 0.9971245778157952
+        }
+      ]
+    },
+    {
+      "id": "repair-018",
+      "query": "Should I disconnect hoses when Relay Dish D100 will not fill?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/dishwasher-water.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 457,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Should I disconnect hoses when Relay Dish D100 will not fill?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "Dishwasher does not fill",
+          "semanticScore": 0.8918213054814685,
+          "rerankScore": 0.9998954009787576
+        },
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "D100 — нет набора воды",
+          "semanticScore": 0.8630864306180618,
+          "rerankScore": 0.9672950974848123
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8487387191846696,
+          "rerankScore": 0.7588741866967351
+        }
+      ]
+    },
+    {
+      "id": "repair-019",
+      "query": "От стиральной машины пахнет гарью, что делать?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/electrical-safety.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 393,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "От стиральной машины пахнет гарью, что делать?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/electrical-safety.md",
+          "section": "Urgent symptoms",
+          "semanticScore": 0.8370997309684753,
+          "rerankScore": 0.6134725351480483
+        },
+        {
+          "source": "docs/knowledge/repair/electrical-safety.md",
+          "section": "Срочные признаки",
+          "semanticScore": 0.8585736751556396,
+          "rerankScore": 0.5111035523588133
+        },
+        {
+          "source": "docs/knowledge/repair/dishwasher-water.md",
+          "section": "Dishwasher does not fill",
+          "semanticScore": 0.7934447054001879,
+          "rerankScore": 0.12508528956979378
+        }
+      ]
+    },
+    {
+      "id": "repair-020",
+      "query": "There are sparks and water near the socket. Is a repair booking enough?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/electrical-safety.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 395,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "There are sparks and water near the socket. Is a repair booking enough?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/electrical-safety.md",
+          "section": "Urgent symptoms",
+          "semanticScore": 0.8622413709451464,
+          "rerankScore": 0.9436893937807033
+        },
+        {
+          "source": "docs/knowledge/repair/electrical-safety.md",
+          "section": "Срочные признаки",
+          "semanticScore": 0.8257809669710418,
+          "rerankScore": 0.6232546440815435
+        }
+      ]
+    },
+    {
+      "id": "repair-021",
+      "query": "Можно ли трогать мокрую вилку?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/electrical-safety.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 237,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Можно ли трогать мокрую вилку?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/electrical-safety.md",
+          "section": "Срочные признаки",
+          "semanticScore": 0.8063780761797671,
+          "rerankScore": 0.8258534262459198
+        },
+        {
+          "source": "docs/knowledge/repair/electrical-safety.md",
+          "section": "Urgent symptoms",
+          "semanticScore": 0.7612067718958965,
+          "rerankScore": 0.1287973019357761
+        }
+      ]
+    },
+    {
+      "id": "repair-022",
+      "query": "Что подготовить перед визитом в мастерскую?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/workshop-preparation.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 367,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Что подготовить перед визитом в мастерскую?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Перед визитом",
+          "semanticScore": 0.8770550929111471,
+          "rerankScore": 0.9993432867774472
+        },
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Before a workshop appointment",
+          "semanticScore": 0.8411795747631665,
+          "rerankScore": 0.9949689397080449
+        },
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Home visit requirements",
+          "semanticScore": 0.8172515252528815,
+          "rerankScore": 0.8234226569870098
+        }
+      ]
+    },
+    {
+      "id": "repair-023",
+      "query": "Does a workshop appointment guarantee the repair is finished in one hour?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/workshop-preparation.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 387,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does a workshop appointment guarantee the repair is finished in one hour?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Warranty terms",
+          "semanticScore": 0.8645074882810194,
+          "rerankScore": 0.7988544188220953
+        },
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Before a workshop appointment",
+          "semanticScore": 0.8595558232466236,
+          "rerankScore": 0.39073287867186757
+        },
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Срок и покрытие",
+          "semanticScore": 0.835334797461659,
+          "rerankScore": 0.12779860028740683
+        }
+      ]
+    },
+    {
+      "id": "repair-024",
+      "query": "Что нужно подготовить к приезду мастера на дом?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/home-visit-preparation.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 411,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Что нужно подготовить к приезду мастера на дом?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Home visit requirements",
+          "semanticScore": 0.8532207187151113,
+          "rerankScore": 0.9978595920321363
+        },
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Адрес и доступ",
+          "semanticScore": 0.8738933876816415,
+          "rerankScore": 0.9955845090528223
+        },
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Перед визитом",
+          "semanticScore": 0.8741918060094179,
+          "rerankScore": 0.7686532370708359
+        }
+      ]
+    },
+    {
+      "id": "repair-025",
+      "query": "Does an adult need to be present for a home visit?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/home-visit-preparation.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 388,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does an adult need to be present for a home visit?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Home visit requirements",
+          "semanticScore": 0.8629732295306709,
+          "rerankScore": 0.8153225412450924
+        }
+      ]
+    },
+    {
+      "id": "repair-026",
+      "query": "Начнётся ли ремонт без согласования сметы?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-approval.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 452,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Начнётся ли ремонт без согласования сметы?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "До начала ремонта",
+          "semanticScore": 0.893092685526175,
+          "rerankScore": 0.9389629089571284
+        },
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "Approving a quote",
+          "semanticScore": 0.8011103871793837,
+          "rerankScore": 0.8620070028820089
+        },
+        {
+          "source": "docs/knowledge/repair/repair-timing.md",
+          "section": "Когда техника будет готова",
+          "semanticScore": 0.8407878374583952,
+          "rerankScore": 0.5554383107260741
+        }
+      ]
+    },
+    {
+      "id": "repair-027",
+      "query": "Does asking for the price count as approval to repair?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-approval.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 454,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does asking for the price count as approval to repair?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "Approving a quote",
+          "semanticScore": 0.8662228424815306,
+          "rerankScore": 0.9978823527555273
+        },
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "До начала ремонта",
+          "semanticScore": 0.8350689011730132,
+          "rerankScore": 0.8047310907943706
+        },
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Оплата диагностики",
+          "semanticScore": 0.8276947428635023,
+          "rerankScore": 0.2294967829035128
+        }
+      ]
+    },
+    {
+      "id": "repair-028",
+      "query": "Как согласовать дополнительные работы?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-approval.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 266,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Как согласовать дополнительные работы?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "Approving a quote",
+          "semanticScore": 0.788309330482482,
+          "rerankScore": 0.9127156592554403
+        },
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "До начала ремонта",
+          "semanticScore": 0.8296799006390545,
+          "rerankScore": 0.7393766884545078
+        }
+      ]
+    },
+    {
+      "id": "repair-029",
+      "query": "Можно ли гарантировать ремонт в тот же день?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-timing.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 391,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Можно ли гарантировать ремонт в тот же день?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Срок и покрытие",
+          "semanticScore": 0.8776640064525975,
+          "rerankScore": 0.7847762136364786
+        },
+        {
+          "source": "docs/knowledge/repair/repair-timing.md",
+          "section": "Completion and spare parts",
+          "semanticScore": 0.8405909607329071,
+          "rerankScore": 0.7738284880505417
+        },
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Warranty terms",
+          "semanticScore": 0.8383809520745096,
+          "rerankScore": 0.7101085690293106
+        }
+      ]
+    },
+    {
+      "id": "repair-030",
+      "query": "Does a diagnostic calendar slot guarantee repair completion?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-timing.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 299,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does a diagnostic calendar slot guarantee repair completion?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Home visit requirements",
+          "semanticScore": 0.8369258033302593,
+          "rerankScore": 0.8745450897467095
+        },
+        {
+          "source": "docs/knowledge/repair/repair-timing.md",
+          "section": "Completion and spare parts",
+          "semanticScore": 0.864774037084334,
+          "rerankScore": 0.8676389605360403
+        },
+        {
+          "source": "docs/knowledge/repair/repair-timing.md",
+          "section": "Когда техника будет готова",
+          "semanticScore": 0.838267503404324,
+          "rerankScore": 0.49288710697036825
+        }
+      ]
+    },
+    {
+      "id": "repair-031",
+      "query": "От чего зависит срок ремонта?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-timing.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 443,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "От чего зависит срок ремонта?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-timing.md",
+          "section": "Когда техника будет готова",
+          "semanticScore": 0.8837798307073359,
+          "rerankScore": 0.9700881417684861
+        },
+        {
+          "source": "docs/knowledge/repair/repair-timing.md",
+          "section": "Completion and spare parts",
+          "semanticScore": 0.8609342061916605,
+          "rerankScore": 0.9423878898746421
+        }
+      ]
+    },
+    {
+      "id": "repair-032",
+      "query": "Как перенести или отменить запись к мастеру?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/booking-changes.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 312,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Как перенести или отменить запись к мастеру?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/booking-changes.md",
+          "section": "Выбор времени",
+          "semanticScore": 0.8305635002759252,
+          "rerankScore": 0.4323040770959147
+        },
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Before a workshop appointment",
+          "semanticScore": 0.8087268357710145,
+          "rerankScore": 0.17427279427751763
+        },
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Перед визитом",
+          "semanticScore": 0.8456587403343911,
+          "rerankScore": 0.14176063153144308
+        }
+      ]
+    },
+    {
+      "id": "repair-033",
+      "query": "Does a demo booking create a real Google Calendar event?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/booking-changes.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 365,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does a demo booking create a real Google Calendar event?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/booking-changes.md",
+          "section": "Выбор времени",
+          "semanticScore": 0.815811921108481,
+          "rerankScore": 0.9965002602191608
+        },
+        {
+          "source": "docs/knowledge/repair/booking-changes.md",
+          "section": "Booking and rescheduling",
+          "semanticScore": 0.8756163194408242,
+          "rerankScore": 0.9919702807172963
+        }
+      ]
+    },
+    {
+      "id": "repair-034",
+      "query": "Does booking confirmation mean an email invitation was sent?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/booking-changes.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 224,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does booking confirmation mean an email invitation was sent?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/booking-changes.md",
+          "section": "Booking and rescheduling",
+          "semanticScore": 0.8645956870190922,
+          "rerankScore": 0.9977668852489198
+        },
+        {
+          "source": "docs/knowledge/repair/booking-changes.md",
+          "section": "Выбор времени",
+          "semanticScore": 0.7744352741346704,
+          "rerankScore": 0.12254429696256705
+        }
+      ]
+    },
+    {
+      "id": "repair-035",
+      "query": "Какой формат номера заявки на ремонт?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-status-guide.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 241,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Какой формат номера заявки на ремонт?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-status-guide.md",
+          "section": "Номер заявки",
+          "semanticScore": 0.887060946016769,
+          "rerankScore": 0.9860523057672104
+        },
+        {
+          "source": "docs/knowledge/repair/repair-status-guide.md",
+          "section": "Job references",
+          "semanticScore": 0.8278276407205355,
+          "rerankScore": 0.2670744875372099
+        }
+      ]
+    },
+    {
+      "id": "repair-036",
+      "query": "Does awaiting approval mean the appliance has been repaired?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-status-guide.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": false,
+      "pass": true,
+      "elapsedMs": 225,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Does awaiting approval mean the appliance has been repaired?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-status-guide.md",
+          "section": "Job references",
+          "semanticScore": 0.837272047996521,
+          "rerankScore": 0.9154251404185813
+        },
+        {
+          "source": "docs/knowledge/repair/repair-status-guide.md",
+          "section": "Номер заявки",
+          "semanticScore": 0.8259319351789968,
+          "rerankScore": 0.14483860411895838
+        }
+      ]
+    },
+    {
+      "id": "repair-037",
+      "query": "Какие данные нельзя сообщать ассистенту?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/privacy-and-handoff.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 261,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Какие данные нельзя сообщать ассистенту?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/privacy-and-handoff.md",
+          "section": "Передача человеку",
+          "semanticScore": 0.8648505726367961,
+          "rerankScore": 0.6182650145466229
+        }
+      ]
+    },
+    {
+      "id": "repair-038",
+      "query": "What happens to automatic handling after human handoff?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/privacy-and-handoff.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 204,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "What happens to automatic handling after human handoff?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/privacy-and-handoff.md",
+          "section": "Human support and data",
+          "semanticScore": 0.8381131138104698,
+          "rerankScore": 0.9934436660111176
+        },
+        {
+          "source": "docs/knowledge/repair/privacy-and-handoff.md",
+          "section": "Передача человеку",
+          "semanticScore": 0.7921826266698175,
+          "rerankScore": 0.7107445449094616
+        }
+      ]
+    },
+    {
+      "id": "repair-039",
+      "query": "Можно ли применять инструкции Relay к стиральной машине Bosch?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/manufacturer-errors.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 238,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Можно ли применять инструкции Relay к стиральной машине Bosch?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/manufacturer-errors.md",
+          "section": "Уточнение модели",
+          "semanticScore": 0.8708012104034424,
+          "rerankScore": 0.9320018837699553
+        },
+        {
+          "source": "docs/knowledge/repair/manufacturer-errors.md",
+          "section": "Model clarification",
+          "semanticScore": 0.8501502275466919,
+          "rerankScore": 0.8482554593147256
+        },
+        {
+          "source": "docs/knowledge/repair/service-scope.md",
+          "section": "Приём техники",
+          "semanticScore": 0.8747469708172677,
+          "rerankScore": 0.529495891600804
+        }
+      ]
+    },
+    {
+      "id": "repair-040",
+      "query": "Are Relay error codes valid for Samsung appliances?",
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/manufacturer-errors.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 262,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Are Relay error codes valid for Samsung appliances?",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/manufacturer-errors.md",
+          "section": "Model clarification",
+          "semanticScore": 0.8835775117370563,
+          "rerankScore": 0.985369371960791
+        },
+        {
+          "source": "docs/knowledge/repair/manufacturer-errors.md",
+          "section": "Уточнение модели",
+          "semanticScore": 0.8586034606222525,
+          "rerankScore": 0.9836068273509135
+        }
+      ]
+    },
+    {
+      "id": "repair-041",
+      "query": "Who won the football world cup in 1998?",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "en",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 206,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "Who won the football world cup in 1998?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-042",
+      "query": "Напиши рецепт шоколадного торта",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "ru",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 231,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "Напиши рецепт шоколадного торта",
+      "retrieved": []
+    },
+    {
+      "id": "repair-043",
+      "query": "What is the current Bitcoin price?",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "en",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 232,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "What is the current Bitcoin price?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-044",
+      "query": "Сколько спутников у Юпитера?",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "ru",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 231,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "Сколько спутников у Юпитера?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-045",
+      "query": "Give me the capital of Brazil",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "en",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 232,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "Give me the capital of Brazil",
+      "retrieved": []
+    },
+    {
+      "id": "repair-046",
+      "query": "Найди отель в Париже",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "ru",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 216,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "Найди отель в Париже",
+      "retrieved": []
+    },
+    {
+      "id": "repair-047",
+      "query": "What is the drum capacity in litres of Relay Wash W100?",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "en",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 232,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "What is the drum capacity in litres of Relay Wash W100?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-048",
+      "query": "Какова мощность компрессора Relay Cool C100 в ваттах?",
+      "expectedStatus": "insufficient",
+      "expectedSources": [],
+      "language": "ru",
+      "actualStatus": "insufficient",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 531,
+      "reason": "No current source passed the relevance gates. Ask for the appliance/model or transfer to a specialist; do not infer an answer from nearby documents.",
+      "rewrittenQuery": "Какова мощность компрессора Relay Cool C100 в ваттах?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-049",
+      "query": "Что означает ошибка E21?",
+      "expectedStatus": "clarify",
+      "expectedSources": [],
+      "language": "ru",
+      "actualStatus": "clarify",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 0,
+      "reason": "The follow-up has no established appliance or previous question. Ask which appliance or model the customer means.",
+      "rewrittenQuery": "Что означает ошибка E21?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-050",
+      "query": "What does error E21 mean?",
+      "expectedStatus": "clarify",
+      "expectedSources": [],
+      "language": "en",
+      "actualStatus": "clarify",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 0,
+      "reason": "The follow-up has no established appliance or previous question. Ask which appliance or model the customer means.",
+      "rewrittenQuery": "What does error E21 mean?",
+      "retrieved": []
+    },
+    {
+      "id": "repair-051",
+      "query": "А гарантия на этот ремонт?",
+      "context": {
+        "appliance": "washing-machine",
+        "model": "W100",
+        "previousQuery": "Relay Wash W100 не сливает воду"
+      },
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 487,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "А гарантия на этот ремонт?\nwashing-machine · W100",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Срок и покрытие",
+          "semanticScore": 0.8723089631699641,
+          "rerankScore": 0.7295229887731488
+        },
+        {
+          "source": "docs/knowledge/repair/repair-warranty.md",
+          "section": "Warranty terms",
+          "semanticScore": 0.846887207773548,
+          "rerankScore": 0.5076103544584863
+        }
+      ]
+    },
+    {
+      "id": "repair-052",
+      "query": "What should I prepare for the visit?",
+      "context": {
+        "appliance": "washing-machine",
+        "model": "W100",
+        "previousQuery": "I want a home visit in Yerevan"
+      },
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/home-visit-preparation.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 267,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "What should I prepare for the visit?\nwashing-machine · W100 · home visit",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Home visit requirements",
+          "semanticScore": 0.8760001506804943,
+          "rerankScore": 0.9815028059698143
+        },
+        {
+          "source": "docs/knowledge/repair/home-visit-preparation.md",
+          "section": "Адрес и доступ",
+          "semanticScore": 0.8521158539903735,
+          "rerankScore": 0.9355019939024207
+        },
+        {
+          "source": "docs/knowledge/repair/workshop-preparation.md",
+          "section": "Перед визитом",
+          "semanticScore": 0.829983037720306,
+          "rerankScore": 0.466540490521933
+        }
+      ]
+    },
+    {
+      "id": "repair-053",
+      "query": "А что означает этот код?",
+      "context": {
+        "appliance": "washing-machine",
+        "model": "W100",
+        "previousQuery": "Relay Wash W100 показывает E21"
+      },
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+      "language": "ru",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": false,
+      "pass": true,
+      "elapsedMs": 461,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "А что означает этот код?\nwashing-machine · W100 · E21",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 — вода в барабане и код E21",
+          "semanticScore": 0.8928879414139644,
+          "rerankScore": 0.99796701130158
+        },
+        {
+          "source": "docs/knowledge/repair/washer-draining.md",
+          "section": "W100 drain fault",
+          "semanticScore": 0.8560573799593072,
+          "rerankScore": 0.9852728876517567
+        },
+        {
+          "source": "docs/knowledge/repair/manufacturer-errors.md",
+          "section": "Model clarification",
+          "semanticScore": 0.8757050707516048,
+          "rerankScore": 0.7414234259559326
+        }
+      ]
+    },
+    {
+      "id": "repair-054",
+      "query": "Is the fee credited toward repair?",
+      "context": {
+        "previousQuery": "I want a home diagnosis visit"
+      },
+      "expectedStatus": "supported",
+      "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+      "language": "en",
+      "actualStatus": "supported",
+      "sourceHit": true,
+      "rawSourceHit": true,
+      "pass": true,
+      "elapsedMs": 373,
+      "reason": "Current sources passed the relevance gates. Cite only facts explicitly contained in these excerpts; relevance does not prove every premise of the question.",
+      "rewrittenQuery": "Is the fee credited toward repair?\nhome diagnosis visit",
+      "retrieved": [
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Diagnostic fees",
+          "semanticScore": 0.9234914506047257,
+          "rerankScore": 0.9998830451967687
+        },
+        {
+          "source": "docs/knowledge/repair/diagnosis-policy.md",
+          "section": "Оплата диагностики",
+          "semanticScore": 0.8624827124085687,
+          "rerankScore": 0.9441597536542808
+        },
+        {
+          "source": "docs/knowledge/repair/repair-approval.md",
+          "section": "До начала ремонта",
+          "semanticScore": 0.8234307344986993,
+          "rerankScore": 0.2772488979668607
+        }
+      ]
+    }
+  ]
+}

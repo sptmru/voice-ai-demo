@@ -9,7 +9,7 @@ import { SupportRuntime } from '../packages/core/src/runtime.js';
 
 // This suite creates/drops only its own random schema. It never truncates the demo or production tables.
 const databaseUrl = process.env.TEST_DATABASE_URL;
-describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local BGE hybrid retrieval', () => {
+describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multilingual hybrid retrieval', () => {
   const schema = `relay_test_${randomUUID().replaceAll('-', '')}`;
   const admin = new pg.Pool({ connectionString: databaseUrl });
   const database = new pg.Pool({ connectionString: databaseUrl, options: `-c search_path=${schema},public` });
@@ -282,9 +282,9 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local BGE hybri
   });
 
   it('idempotently indexes seed sources and makes uploaded facts immediately searchable', async () => {
-    expect(await rag.listDocuments()).toHaveLength(10);
+    expect(await rag.listDocuments()).toHaveLength(27);
     await seedKnowledge(database);
-    expect(await rag.listDocuments()).toHaveLength(10);
+    expect(await rag.listDocuments()).toHaveLength(27);
     const input = {
       title: 'ZEPHYR-924 maintenance',
       content:

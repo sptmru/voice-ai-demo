@@ -1,3 +1,5 @@
+import { repairMessage } from './repair-runtime.js';
+import { isRepairScenario } from './repair-tools.js';
 import { businessMessage } from './business-runtime.js';
 import { isBusinessScenario, businessIntent } from './business-tools.js';
 import type {
@@ -160,9 +162,19 @@ export class SupportRuntime {
         await this.tool(id, 'request_human_handoff', { reason: text.slice(0, 2000) });
         return this.say(
           id,
-          'I have passed this conversation to the operator queue. Your context is included.',
+          isRepairScenario(session.scenarioId)
+            ? 'I have passed this conversation to the operator queue with your repair context.'
+            : 'I have passed this conversation to the operator queue. Your context is included.',
         );
       }
+      if (isRepairScenario(session.scenarioId))
+        return await repairMessage(
+          session,
+          text,
+          this.repo,
+          (name, input = {}) => this.tool(id, name, input),
+          (message) => this.say(id, message),
+        );
       if (isBusinessScenario(session.scenarioId))
         return await businessMessage(
           session,
@@ -398,8 +410,12 @@ export class SupportRuntime {
         intent: businessIntent(session.scenarioId),
         severity: 'low',
         product: session.snapshot.account.products[0] ?? 'Business demo',
-        issue: 'Incomplete business conversation',
-        diagnosis: 'The conversation ended before a completed business result was recorded.',
+        issue: isRepairScenario(session.scenarioId)
+          ? 'Appliance repair conversation ended'
+          : 'Incomplete business conversation',
+        diagnosis: isRepairScenario(session.scenarioId)
+          ? 'No confirmed support result was recorded. Appliance diagnosis and repair remain unconfirmed.'
+          : 'The conversation ended before a completed business result was recorded.',
         resolved: false,
         nextAction: 'Review the conversation and any saved actions, then follow up with the customer.',
       });

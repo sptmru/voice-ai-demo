@@ -1,8 +1,106 @@
 # Implementation validation
 
-This file separates source implementation, local automated tests, and real provider evidence. All operational customer/carrier systems remain fictional local PostgreSQL data.
+This file separates source implementation, local automated tests, and real provider evidence. Repair, customer and carrier operational records remain fictional local PostgreSQL data.
 
-## Business demo extension — 2026-09-16
+## English presentation restored — 2026-09-16
+
+At the user's request, the UI, scenario prompts, deterministic replies, default voice
+instructions, service/job fixtures and built-in repair documents are now in English.
+The brand is **Relay Workshop**. Russian input recognizers and multilingual embeddings
+remain available; they no longer make the presentation Russian-first. Earlier transcripts
+and session snapshots are preserved. Rebuild and run `db:seed`, then start a new session
+to use the translated fixture data and documents. No public deployment was performed.
+
+Verification for this correction:
+
+- **115 unit tests passed**, including exact English guided repair/booking prompts.
+- **15 targeted voice-bridge integration tests passed** with blank external provider keys.
+- **13 affected browser scenarios passed**: repair, business and support/upload flows.
+- Root/web type checking and the production build passed. Desktop/mobile screenshots
+  show English headings, prompts, replies, source cards and results.
+- The English translation of the 54-question regression set passed **54/54** against the
+  English corpus, with expected-source recall44/44, unsupported rejection8/8 and clarification2/2.
+  Report: [English demo evaluation](evaluation/english-default.json).
+
+The original bilingual query set is preserved as `evaluation/repair-multilingual.json`,
+selectable using `RAG_EVAL_DATASET`. Against the English-only corpus it passes **51/54**:
+Russian home-visit coverage and repair-reference format questions return insufficient;
+the Russian appointment-change question retrieves the wrong source. These are three known cross-language regressions compared with the former bilingual corpus. Report: [cross-language evaluation](evaluation/english-corpus-multilingual.json).
+All eight unsupported cases still decline and both model-less error-code cases clarify.
+The English and multilingual evaluations ran concurrently, so their latency is not a
+controlled comparison with the earlier measurements below. Earlier corpus/ablation
+reports are retained as historical evidence.
+
+## Appliance repair and RAG — 2026-09-16
+
+Implemented the three repair scenarios, model/symptom context, customer-owned job lookup,
+structured diagnosis prices, Google/demo diagnostic appointments, source evidence UI and
+versioned bilingual knowledge. All changes below are local working-tree changes on base
+`d22c90f6bd96638a3bc7bb9699d4ea962c0a7c8c`; the public deployment was not updated.
+
+| Check                                                  | Result                                                                                    |
+| ------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| `corepack pnpm test`                                   | **113 passed**                                                                            |
+| `pnpm test:integration` in a one-off Compose container | **52 passed**, disposable PostgreSQL schemas                                              |
+| `corepack pnpm test:e2e` against isolated preview      | **16 passed** in one final full run                                                       |
+| `corepack pnpm build`                                  | Root/web TypeScript and production Next build passed                                      |
+| `pnpm rag:evaluate` with real local ONNX models        | **54/54 passed**, 44/44 expected sources in top3, 8/8 unsupported rejected, 2/2 clarified |
+
+RAG covers active/date/domain/model filtering, ambiguous policy versions, query context,
+actual bilingual embeddings and cross-encoder inference, heading/table/PDF page extraction,
+metadata updates and legacy reindex reconstruction. Voice bridge fixtures verify repair
+context, explicitly selected booking, factual outcomes and serialization of both supported
+and insufficient evidence. They are protocol tests, not live model reasoning validation.
+Browser checks include a real W100 → warranty follow-up with a 90-day answer and warranty
+source, booking, status, desktop/mobile layout and legacy flows. Screenshots:
+`test-results/repair-evidence-desktop.png`, `test-results/repair-status-mobile.png`.
+
+Earlier rapid browser batches hit the real 180-request/minute API limit. The final runner
+uses one worker and 200ms action pacing (`E2E_SLOW_MO_MS` overrides it); the production
+limit remains unchanged. The final full 16-test run passed in 1.2 minutes.
+
+### Retrieval measurements
+
+The 54-question dataset is a curated development/regression set, not held-out evaluation.
+The expected-source subset has 23 RU and 21 EN questions. Final warmed local CPU latency
+with E5 + reranker: **p50 365ms, p95 475ms**. Download/indexing time is excluded; these are
+local measurements, not a production latency promise.
+
+| Configuration                                             | Full cases passed | Expected source in top3 after admission | Unsupported rejected | Warm p50 / p95 |
+| --------------------------------------------------------- | ----------------- | --------------------------------------- | -------------------- | -------------- |
+| E5 + reranker (default)                                   | 54/54             | 44/44                                   | 8/8                  | 365 / 475ms    |
+| E5, reranker off                                          | 50/54             | 43/44                                   | 5/8                  | 13 / 29ms      |
+| Legacy BGE, reranker off, diagnostic cosine threshold .35 | 47/54             | 43/44                                   | 2/8                  | 17 / 43ms      |
+
+The BGE admission threshold is deliberately reported and is **not** directly comparable
+to E5 thresholds. The fairer context-free, ungated raw source recall is 42/44 for both
+embedding models: E5 RU22/23, EN20/21; BGE RU21/23, EN21/21. This small corpus supports
+using E5 for the Russian-first demo but does not establish universal superiority.
+The stronger result comes from the whole contextual retrieval/reranking pipeline.
+
+Full question-level reports: [default](evaluation/default.json),
+[without reranker](evaluation/without-reranker.json), [legacy BGE](evaluation/legacy-bge.json).
+Compare using the original [bilingual dataset](evaluation/repair-multilingual.json); reproduction and limitations
+are in [RAG documentation](rag.md).
+
+### Calendar test isolation incident
+
+The first integration run inherited newly configured Google credentials from `.env`.
+An existing booking fixture unexpectedly created one real calendar event at
+2026-09-16 13:15:00 UTC (a 30-minute test consultation for September17). It was identified
+by its generated test session/event identifiers and exact timestamp, deleted with no
+attendee updates, and its cancellation verified. `vitest.integration.config.ts` now clears
+all Google Calendar and voice provider keys after loading `.env`; the voice bridge suite
+also asserts demo mode before running. All final tests and the preview used empty external
+credentials. This incidental creation is not a comprehensive live calendar acceptance test.
+No live voice call or public deployment was performed for the repair extension.
+
+The temporary preview and evaluation/integration schemas are removed after verification.
+Existing installations need migration005, seed and uploaded-document reindexing when
+this update is deployed; see [reindex procedure](rag-reindex.md). The code changes do not
+silently replace the existing public application or its database.
+
+## Earlier business demo extension — 2026-09-16
 
 Implemented appointment booking, lead qualification, order support, Google Calendar
 adapter, presentation mode and a persisted browser operator handoff. Existing
@@ -30,7 +128,7 @@ and the existing support/upload/delete/microphone flows. Screenshots:
 `test-results/business-retail-mobile.png`, `test-results/operator-desktop.png`.
 SSE-driven detail refreshes are coalesced to avoid request-limit bursts.
 
-**Live Google Calendar creation remains unverified:** the four required OAuth/
+**Historical state at that earlier run:** the four required OAuth/
 calendar fields are absent from the local configuration. No external calendar
 event or new live model call was made during these checks. See
 [Google Calendar setup](calendar.md). The new version has not been deployed to the

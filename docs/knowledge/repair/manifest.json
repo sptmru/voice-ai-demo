@@ -1,0 +1,180 @@
+[
+  {
+    "file": "service-scope.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "service-scope",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "diagnosis-policy.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "diagnosis-policy",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "repair-warranty.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "repair-warranty",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "washer-draining.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "washer-draining",
+      "status": "active",
+      "effectiveFrom": "2026-09-01",
+      "appliance": "washing-machine",
+      "models": ["W100"]
+    }
+  },
+  {
+    "file": "washer-vibration.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "washer-vibration",
+      "status": "active",
+      "effectiveFrom": "2026-09-01",
+      "appliance": "washing-machine",
+      "models": ["W200"]
+    }
+  },
+  {
+    "file": "fridge-cooling.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "fridge-cooling",
+      "status": "active",
+      "effectiveFrom": "2026-09-01",
+      "appliance": "refrigerator",
+      "models": ["C100"]
+    }
+  },
+  {
+    "file": "dishwasher-water.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "dishwasher-water",
+      "status": "active",
+      "effectiveFrom": "2026-09-01",
+      "appliance": "dishwasher",
+      "models": ["D100"]
+    }
+  },
+  {
+    "file": "electrical-safety.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "electrical-safety",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "workshop-preparation.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "workshop-preparation",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "home-visit-preparation.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "home-visit-preparation",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "repair-approval.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "repair-approval",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "repair-timing.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "repair-timing",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "booking-changes.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "booking-changes",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "repair-status-guide.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "repair-status-guide",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "privacy-and-handoff.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "privacy-and-handoff",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "manufacturer-errors.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.09",
+      "policyKey": "manufacturer-errors",
+      "status": "active",
+      "effectiveFrom": "2026-09-01"
+    }
+  },
+  {
+    "file": "warranty-archived.md",
+    "metadata": {
+      "domain": "repair",
+      "version": "2026.08",
+      "policyKey": "repair-warranty",
+      "status": "archived",
+      "effectiveTo": "2026-08-31"
+    }
+  }
+]

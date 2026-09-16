@@ -11,7 +11,11 @@ describe('knowledge parsing', () => {
     );
     expect(chunks[0].section).toBe('First');
     expect(chunks[1].content.split(' ').slice(0, 5)).toEqual(chunks[0].content.split(' ').slice(-5));
-    expect(chunks.at(-1)).toEqual({ section: 'Second', content: 'An independent short section.' });
+    expect(chunks.at(-1)).toMatchObject({
+      section: 'Second',
+      content: 'An independent short section.',
+      headingPath: ['First', 'Second'],
+    });
     expect(chunks.every((chunk) => chunk.content.split(' ').length <= 20)).toBe(true);
   });
 

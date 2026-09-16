@@ -1,0 +1,398 @@
+[
+  {
+    "id": "repair-001",
+    "query": "Какие виды бытовой техники вы принимаете?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/service-scope.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-002",
+    "query": "Do you repair phones or laptops?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/service-scope.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-003",
+    "query": "Можно ли вызвать мастера в Гюмри?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/service-scope.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-004",
+    "query": "Диагностика засчитывается в стоимость ремонта?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-005",
+    "query": "If I decline repair, do I still pay for workshop diagnosis?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-006",
+    "query": "Is the home visit fee credited toward repair?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-007",
+    "query": "Какой срок гарантии на выполненный ремонт?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-008",
+    "query": "Does your repair warranty cover an unrelated new fault?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-009",
+    "query": "Does the warranty cover installed spare parts?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-010",
+    "query": "Relay Wash W100 показывает E21, вода осталась в барабане. Что делать?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-011",
+    "query": "Can E21 on Relay Wash W100 prove that the pump needs replacement?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-012",
+    "query": "Можно ли силой открыть запертую дверцу Relay Wash W100?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-013",
+    "query": "Relay Wash W200 сильно скачет при отжиме. Что уточнить?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/washer-vibration.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-014",
+    "query": "Does noise on Relay Wash W200 prove bearing failure?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/washer-vibration.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-015",
+    "query": "Relay Cool C100 плохо охлаждает. Какие проверки можно сделать без разборки?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/fridge-cooling.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-016",
+    "query": "Can I use a sharp tool to defrost Relay Cool C100?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/fridge-cooling.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-017",
+    "query": "Relay Dish D100 не набирает воду. Что можно проверить?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/dishwasher-water.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-018",
+    "query": "Should I disconnect hoses when Relay Dish D100 will not fill?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/dishwasher-water.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-019",
+    "query": "От стиральной машины пахнет гарью, что делать?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/electrical-safety.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-020",
+    "query": "There are sparks and water near the socket. Is a repair booking enough?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/electrical-safety.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-021",
+    "query": "Можно ли трогать мокрую вилку?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/electrical-safety.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-022",
+    "query": "Что подготовить перед визитом в мастерскую?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/workshop-preparation.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-023",
+    "query": "Does a workshop appointment guarantee the repair is finished in one hour?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/workshop-preparation.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-024",
+    "query": "Что нужно подготовить к приезду мастера на дом?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/home-visit-preparation.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-025",
+    "query": "Does an adult need to be present for a home visit?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/home-visit-preparation.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-026",
+    "query": "Начнётся ли ремонт без согласования сметы?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-approval.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-027",
+    "query": "Does asking for the price count as approval to repair?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-approval.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-028",
+    "query": "Как согласовать дополнительные работы?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-approval.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-029",
+    "query": "Можно ли гарантировать ремонт в тот же день?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-timing.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-030",
+    "query": "Does a diagnostic calendar slot guarantee repair completion?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-timing.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-031",
+    "query": "От чего зависит срок ремонта?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-timing.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-032",
+    "query": "Как перенести или отменить запись к мастеру?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/booking-changes.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-033",
+    "query": "Does a demo booking create a real Google Calendar event?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/booking-changes.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-034",
+    "query": "Does booking confirmation mean an email invitation was sent?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/booking-changes.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-035",
+    "query": "Какой формат номера заявки на ремонт?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-status-guide.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-036",
+    "query": "Does awaiting approval mean the appliance has been repaired?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-status-guide.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-037",
+    "query": "Какие данные нельзя сообщать ассистенту?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/privacy-and-handoff.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-038",
+    "query": "What happens to automatic handling after human handoff?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/privacy-and-handoff.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-039",
+    "query": "Можно ли применять инструкции Relay к стиральной машине Bosch?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/manufacturer-errors.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-040",
+    "query": "Are Relay error codes valid for Samsung appliances?",
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/manufacturer-errors.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-041",
+    "query": "Who won the football world cup in 1998?",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "en"
+  },
+  {
+    "id": "repair-042",
+    "query": "Напиши рецепт шоколадного торта",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "ru"
+  },
+  {
+    "id": "repair-043",
+    "query": "What is the current Bitcoin price?",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "en"
+  },
+  {
+    "id": "repair-044",
+    "query": "Сколько спутников у Юпитера?",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "ru"
+  },
+  {
+    "id": "repair-045",
+    "query": "Give me the capital of Brazil",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "en"
+  },
+  {
+    "id": "repair-046",
+    "query": "Найди отель в Париже",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "ru"
+  },
+  {
+    "id": "repair-047",
+    "query": "What is the drum capacity in litres of Relay Wash W100?",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "en"
+  },
+  {
+    "id": "repair-048",
+    "query": "Какова мощность компрессора Relay Cool C100 в ваттах?",
+    "expectedStatus": "insufficient",
+    "expectedSources": [],
+    "language": "ru"
+  },
+  {
+    "id": "repair-049",
+    "query": "Что означает ошибка E21?",
+    "expectedStatus": "clarify",
+    "expectedSources": [],
+    "language": "ru"
+  },
+  {
+    "id": "repair-050",
+    "query": "What does error E21 mean?",
+    "expectedStatus": "clarify",
+    "expectedSources": [],
+    "language": "en"
+  },
+  {
+    "id": "repair-051",
+    "query": "А гарантия на этот ремонт?",
+    "context": {
+      "appliance": "washing-machine",
+      "model": "W100",
+      "previousQuery": "Relay Wash W100 не сливает воду"
+    },
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/repair-warranty.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-052",
+    "query": "What should I prepare for the visit?",
+    "context": {
+      "appliance": "washing-machine",
+      "model": "W100",
+      "previousQuery": "I want a home visit in Yerevan"
+    },
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/home-visit-preparation.md"],
+    "language": "en"
+  },
+  {
+    "id": "repair-053",
+    "query": "А что означает этот код?",
+    "context": {
+      "appliance": "washing-machine",
+      "model": "W100",
+      "previousQuery": "Relay Wash W100 показывает E21"
+    },
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/washer-draining.md"],
+    "language": "ru"
+  },
+  {
+    "id": "repair-054",
+    "query": "Is the fee credited toward repair?",
+    "context": {
+      "previousQuery": "I want a home diagnosis visit"
+    },
+    "expectedStatus": "supported",
+    "expectedSources": ["docs/knowledge/repair/diagnosis-policy.md"],
+    "language": "en"
+  }
+]

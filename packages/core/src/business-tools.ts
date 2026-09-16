@@ -1,3 +1,4 @@
+import { isRepairScenario, validateRepairBooking } from './repair-tools.js';
 import { z } from 'zod';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import type { ScenarioId, SupportSession } from './domain.js';
@@ -5,13 +6,15 @@ import type { ToolContext, ToolDefinition } from './tools.js';
 import { CalendarError, getCalendarService } from '../../integrations/src/calendar.js';
 
 export const isBusinessScenario = (id: ScenarioId) =>
-  ['appointment-booking', 'lead-qualification', 'order-support'].includes(id);
+  isRepairScenario(id) || ['appointment-booking', 'lead-qualification', 'order-support'].includes(id);
 export const businessIntent = (id: ScenarioId) =>
-  id === 'appointment-booking'
-    ? ('appointment_booking' as const)
-    : id === 'lead-qualification'
-      ? ('lead_qualification' as const)
-      : ('order_support' as const);
+  isRepairScenario(id)
+    ? ('repair_support' as const)
+    : id === 'appointment-booking'
+      ? ('appointment_booking' as const)
+      : id === 'lead-qualification'
+        ? ('lead_qualification' as const)
+        : ('order_support' as const);
 const short = z.string().trim().min(2).max(500);
 function state(c: ToolContext, allowed: ScenarioId[]) {
   if (!allowed.includes(c.session.scenarioId) || !c.session.snapshot.business)
@@ -34,7 +37,13 @@ function define<T>(
     jsonSchema: zodToJsonSchema(inputSchema, { $refStrategy: 'none' }) as Record<string, unknown>,
   };
 }
-const bookingScenarios: ScenarioId[] = ['appointment-booking', 'lead-qualification'];
+const bookingScenarios: ScenarioId[] = [
+  'appointment-booking',
+  'lead-qualification',
+  'repair-advice',
+  'repair-booking',
+  'repair-status',
+];
 export function createBusinessTools(): ToolDefinition[] {
   return [
     define(
@@ -105,6 +114,7 @@ export function createBusinessTools(): ToolDefinition[] {
         .strict(),
       'write',
       async (input, c) => {
+        validateRepairBooking(c.session, input.serviceId);
         const business = state(c, bookingScenarios);
         const service = business.services.find((s) => s.id === input.serviceId);
         const matches = (value: Record<string, unknown>) =>
@@ -137,7 +147,9 @@ export function createBusinessTools(): ToolDefinition[] {
             start: input.start,
             end: input.end,
             summary: `${service.name} — ${customer.name}`,
-            description: `Relay demo session ${c.session.id}. ${business.lead?.need ?? 'Consultation requested through the demo.'}`,
+            description: c.session.snapshot.repair
+              ? `Relay repair demo ${c.session.id}. Appliance: ${c.session.snapshot.repair.appliance}. Model: ${c.session.snapshot.repair.model ?? 'not supplied'}. Reported symptom: ${c.session.snapshot.repair.issue}. ${input.serviceId === 'home-diagnosis' ? `Address: ${c.session.snapshot.repair.address}, ${c.session.snapshot.repair.region}.` : 'Workshop diagnosis appointment.'} This is a diagnosis appointment, not a promise of repair completion.`
+              : `Relay demo session ${c.session.id}. ${business.lead?.need ?? 'Consultation requested through the demo.'}`,
           });
           return await c.repo.createAction(
             c.session.id,
@@ -240,6 +252,13 @@ export async function validateBusinessOutcome(
   actions: Record<string, unknown>[],
 ) {
   if (!resolved) return;
+  if (isRepairScenario(session.scenarioId)) {
+    if (!actions.some((a) => a.kind === 'appointment'))
+      throw new Error(
+        'Cannot mark repair support resolved without a saved appointment; reading advice or status is not a repair',
+      );
+    return;
+  }
   const requiredKind =
     session.scenarioId === 'appointment-booking'
       ? 'appointment'

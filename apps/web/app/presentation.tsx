@@ -17,11 +17,10 @@ import {
   PhoneOff,
   RefreshCw,
   Send,
-  ShoppingBag,
   Sparkles,
-  Users,
   Wrench,
 } from 'lucide-react';
+import { KnowledgeEvidence, type EvidenceResult } from './knowledge-evidence';
 import type { AgentEvent, Customer, SupportSession } from '../../../packages/core/src/domain';
 
 export type DemoScenario = {
@@ -54,33 +53,29 @@ const business: Record<
   string,
   { title: string; description: string; result: string; Icon: typeof CalendarDays }
 > = {
-  'appointment-booking': {
-    title: 'Book an appointment',
-    description: 'Find a time that works and arrange a consultation.',
-    result: 'A confirmed appointment',
+  'repair-advice': {
+    title: 'Appliance troubleshooting',
+    description: 'Describe the problem and find out what to do next.',
+    result: 'A clear answer with sources',
+    Icon: Wrench,
+  },
+  'repair-booking': {
+    title: 'Book a repair',
+    description: 'Check the repair terms and choose an appointment time.',
+    result: 'An appointment with a confirmed time',
     Icon: CalendarDays,
   },
-  'lead-qualification': {
-    title: 'Meet your next customer',
-    description: 'Understand the project, budget, and timing.',
-    result: 'A qualified lead with a next step',
-    Icon: Users,
-  },
-  'order-support': {
-    title: 'Help with an order',
-    description: 'Check delivery progress and request a change.',
-    result: 'An order update and a support request',
-    Icon: ShoppingBag,
-  },
-  'carrier-incident': {
-    title: 'Solve a technical issue',
-    description: 'Investigate a calling problem using account data and evidence.',
-    result: 'A diagnosis and a support ticket',
-    Icon: Headphones,
+  'repair-status': {
+    title: 'Check repair status',
+    description: 'Find out how the repair is progressing.',
+    result: 'Repair status and the next step',
+    Icon: CheckCircle2,
   },
 };
 const actionLabels: Record<string, string> = {
   appointment: 'Appointment booked',
+  get_repair_catalog: 'Checked services and prices',
+  get_repair_status: 'Checked repair status',
   lead: 'Qualified lead saved',
   'delivery-change': 'Delivery change requested',
   list_services: 'Checked available services',
@@ -256,7 +251,21 @@ export function Presentation(props: {
   const selected = props.scenarios.find((s) => s.id === props.scenario);
   const activeScenario = props.scenarios.find((s) => s.id === detail?.session.scenarioId);
   const promptScenario = active ? activeScenario : selected;
+  const firstUserTurn = !events.some((event) => event.type === 'transcript' && event.payload.role === 'user');
+  const suggestedPrompts = promptScenario?.quickPrompts?.length
+    ? [
+        ...new Set([
+          ...(firstUserTurn && props.scenario.startsWith('repair-') ? [promptScenario.prompt] : []),
+          ...promptScenario.quickPrompts,
+        ]),
+      ]
+    : [promptScenario?.prompt || 'How can you help me?'];
   const outcome = detail?.session.outcome;
+  const latestRetrieval = [...events].reverse().find((event) => event.type === 'retrieval.completed');
+  const evidence =
+    latestRetrieval && Array.isArray(latestRetrieval.payload.chunks)
+      ? (latestRetrieval.payload as unknown as EvidenceResult)
+      : undefined;
   const milestones = events.filter((e) =>
     [
       'tool.completed',
@@ -269,10 +278,10 @@ export function Presentation(props: {
   return (
     <div className="demo-view">
       <div className="demo-section-label">
-        <span>01 / CHOOSE A BUSINESS TASK</span>
-        <small>Use fictional details to explore the demo</small>
+        <span>01 / HOW CAN WE HELP WITH YOUR APPLIANCE?</span>
+        <small>Fictional workshop · demonstration data</small>
       </div>
-      <div className="demo-scenarios" role="group" aria-label="Business scenarios">
+      <div className="demo-scenarios" role="group" aria-label="Repair scenarios">
         {props.scenarios
           .filter((s) => business[s.id])
           .map((s) => {
@@ -299,6 +308,37 @@ export function Presentation(props: {
             );
           })}
       </div>
+      <details className="demo-other-scenarios">
+        <summary>
+          Other scenarios <ChevronDown size={14} />
+        </summary>
+        <label htmlFor="other-scenario">All demo scenarios</label>
+        <select
+          id="other-scenario"
+          value={props.scenario}
+          onChange={(event) => props.onScenario(event.target.value)}
+          disabled={busy}
+        >
+          <optgroup label="Appliance repair">
+            {props.scenarios
+              .filter((s) => business[s.id])
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+          </optgroup>
+          <optgroup label="Other tasks and technical support">
+            {props.scenarios
+              .filter((s) => !business[s.id])
+              .map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+          </optgroup>
+        </select>
+      </details>
       <section className="demo-launch">
         <div>
           <span className="eyebrow">02 / TRY THE CONVERSATION</span>
@@ -309,10 +349,10 @@ export function Presentation(props: {
           </h2>
           <p>
             {active
-              ? 'Your conversation and its results stay together below.'
+              ? 'Your conversation, sources, and results stay together below.'
               : props.voiceAvailable
-                ? 'Talk to the agent from your browser. Or start with a message.'
-                : 'Start in text to try the complete workflow.'}
+                ? 'Talk to the agent in your browser or start with a message.'
+                : 'Start with a message to try the complete workflow.'}
           </p>
           {active && detail.session.scenarioId !== props.scenario && (
             <p className="demo-next-scenario">Selected for the next session: {selected?.label}</p>
@@ -429,10 +469,7 @@ export function Presentation(props: {
           (promptScenario?.quickPrompts?.length ||
             !events.some((e) => e.type === 'transcript' && e.payload.role === 'user')) ? (
             <div className="demo-prompts">
-              {(promptScenario?.quickPrompts?.length
-                ? promptScenario.quickPrompts
-                : [promptScenario?.prompt || 'How can you help me?']
-              ).map((prompt) => (
+              {suggestedPrompts.map((prompt) => (
                 <button
                   key={prompt}
                   className="starter-prompt"
@@ -491,6 +528,7 @@ export function Presentation(props: {
           </div>
         </section>
         <aside className="demo-progress">
+          {evidence && <KnowledgeEvidence result={evidence} />}
           <section className="panel">
             <div className="panel-heading">
               <h2>

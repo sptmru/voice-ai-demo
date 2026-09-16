@@ -14,8 +14,12 @@ test('presentation books an explicit slot and labels local results honestly', as
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'A conversation. A real next step.' })).toBeVisible();
-  await expect(page.getByRole('group', { name: 'Business scenarios' }).getByRole('button')).toHaveCount(4);
+  await expect(
+    page.getByRole('heading', { name: 'Appliance repair, with a clear next step.' }),
+  ).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Repair scenarios' }).getByRole('button')).toHaveCount(3);
+  await page.locator('.demo-other-scenarios summary').click();
+  await page.getByLabel('All demo scenarios').selectOption('appointment-booking');
   await page.getByRole('button', { name: 'Start in text', exact: true }).click();
   await page.getByRole('button', { name: 'Try: Show available times', exact: true }).click();
   await expect(page.locator('.demo-transcript')).toContainText('1.');
@@ -33,7 +37,8 @@ test('presentation books an explicit slot and labels local results honestly', as
 
 test('sales lead captures the supplied need, budget and timeline', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: /Meet your next customer/ }).click();
+  await page.locator('.demo-other-scenarios summary').click();
+  await page.getByLabel('All demo scenarios').selectOption('lead-qualification');
   await page.getByRole('button', { name: 'Start in text', exact: true }).click();
   await page.getByRole('button', { name: /Try: Need: automate incoming calls/ }).click();
   const result = page.getByRole('region', { name: 'Conversation result' });
@@ -47,7 +52,8 @@ test('sales lead captures the supplied need, budget and timeline', async ({ page
 test('retail change requires confirmation and mobile presentation fits', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
-  await page.getByRole('button', { name: /Help with an order/ }).click();
+  await page.locator('.demo-other-scenarios summary').click();
+  await page.getByLabel('All demo scenarios').selectOption('order-support');
   await page.getByRole('button', { name: 'Start in text', exact: true }).click();
   await page.getByRole('button', { name: 'Try: Where is order ORD-1042?', exact: true }).click();
   await expect(page.locator('.demo-transcript')).toContainText('ORD-1042');
@@ -66,6 +72,8 @@ test('retail change requires confirmation and mobile presentation fits', async (
 
 test('operator accepts a handoff and both sides exchange text with AI paused', async ({ page }) => {
   await page.goto('/');
+  await page.locator('.demo-other-scenarios summary').click();
+  await page.getByLabel('All demo scenarios').selectOption('appointment-booking');
   await page.getByRole('button', { name: 'Start in text', exact: true }).click();
   await page.getByRole('button', { name: 'Try: Show available times', exact: true }).click();
   await page.getByRole('button', { name: 'Talk to a person', exact: true }).click();

@@ -37,6 +37,7 @@ import {
   X,
   Zap,
 } from 'lucide-react';
+import { KnowledgeEvidence, SourceCard, type EvidenceResult } from './knowledge-evidence';
 import { BrowserVoiceClient } from './voice-client';
 import { Presentation, OperatorPanel, type Handoff, type DemoScenario } from './presentation';
 import type {
@@ -221,43 +222,11 @@ function EventCard({ event }: { event: AgentEvent }) {
   );
 }
 
-function SourceCard({ source }: { source: RetrievedChunk }) {
-  return (
-    <details className="source-card">
-      <summary>
-        <span className="source-icon">
-          <FileText size={15} />
-        </span>
-        <span>
-          <strong>{source.document}</strong>
-          <small>{source.section}</small>
-        </span>
-        <ChevronDown size={14} />
-      </summary>
-      <p>{source.content}</p>
-      <div className="source-scores">
-        <span>
-          Semantic <b>{source.semanticScore.toFixed(3)}</b>
-        </span>
-        <span>
-          Lexical <b>{source.lexicalScore.toFixed(3)}</b>
-        </span>
-        <span>
-          RRF <b>{source.combinedScore.toFixed(4)}</b>
-        </span>
-      </div>
-      <small className="mono">
-        {source.chunkId} · {source.type}
-      </small>
-    </details>
-  );
-}
-
 export default function Home() {
   const [config, setConfig] = useState<Config>();
   const [detail, setDetail] = useState<Detail>();
   const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [scenario, setScenario] = useState('appointment-booking');
+  const [scenario, setScenario] = useState('repair-advice');
   const [tab, setTab] = useState<'demo' | 'workspace' | 'knowledge' | 'history' | 'operator'>('demo');
   const [technicalDetails, setTechnicalDetails] = useState(false);
   const [operatorInput, setOperatorInput] = useState('');
@@ -272,7 +241,10 @@ export default function Home() {
   const [uploadStatus, setUploadStatus] = useState('');
   const [uploading, setUploading] = useState(false);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
-  const [searchResults, setSearchResults] = useState<RetrievedChunk[]>([]);
+  const [searchResults, setSearchResults] = useState<EvidenceResult>();
+  const [knowledgeDomain, setKnowledgeDomain] = useState('repair');
+  const [uploadDomain, setUploadDomain] = useState('repair');
+  const [uploadMetadata, setUploadMetadata] = useState('');
   const [seconds, setSeconds] = useState(0);
   const [voiceState, setVoiceState] = useState('idle');
   const [voiceProvider, setVoiceProvider] = useState<'gemini' | 'openai'>('gemini');
@@ -493,6 +465,11 @@ export default function Home() {
     try {
       const form = new FormData();
       form.append('file', uploadFile);
+      const metadata = uploadMetadata.trim() ? JSON.parse(uploadMetadata) : {};
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata))
+        throw new Error('Metadata must be a JSON object.');
+      form.append('metadata', JSON.stringify({ ...metadata, domain: uploadDomain }));
+      form.append('domain', uploadDomain);
       const result = await api<{ document: KnowledgeDocument; durationMs: number }>('/knowledge/upload', {
         method: 'POST',
         body: form,
@@ -608,7 +585,16 @@ export default function Home() {
       });
       if (target.kind === 'document') {
         setDocuments((old) => old.filter((doc) => doc.id !== target.id));
-        setSearchResults((old) => old.filter((chunk) => chunk.documentId !== target.id));
+        // A removed source can invalidate the evidence assessment, so ask for a fresh search.
+        setSearchResults((old) =>
+          old
+            ? {
+                query: old.query,
+                chunks: [],
+                reason: 'Source deleted. Search again to check the remaining documents.',
+              }
+            : undefined,
+        );
         setUploadStatus('');
       } else {
         setSessions((old) => old.filter((session) => session.id !== target.id));
@@ -692,7 +678,7 @@ export default function Home() {
         <header className="topbar">
           <div className="wordmark">
             relay<span> / </span>
-            <span>Voice studio</span>
+            <span>Relay Workshop</span>
           </div>
           <div className="topbar-right">
             <span className="environment">
@@ -703,7 +689,7 @@ export default function Home() {
             </a>
             <span className="topbar-separator" />
             <span className="company-mark">R</span>
-            <span>Relay Demo</span>
+            <span>Appliance repair</span>
           </div>
         </header>
         <div className="page-heading">
@@ -711,7 +697,7 @@ export default function Home() {
             <div className="eyebrow">VOICE AI · BUSINESS DEMO</div>
             <h1>
               {tab === 'demo'
-                ? 'A conversation. A real next step.'
+                ? 'Appliance repair, with a clear next step.'
                 : tab === 'operator'
                   ? 'Pick up with the full picture.'
                   : tab === 'workspace'
@@ -722,13 +708,13 @@ export default function Home() {
             </h1>
             <p>
               {tab === 'demo'
-                ? 'Choose a task, talk to your agent, and watch the work get done.'
+                ? 'Understand an appliance problem, book a technician, or check your repair status.'
                 : tab === 'operator'
                   ? 'Review the context and continue in text. The AI pauses when a handoff is requested.'
                   : tab === 'workspace'
                     ? 'A support engineer with the right tools, and nothing to hide.'
                     : tab === 'knowledge'
-                      ? 'Search the same technical knowledge your support agent uses.'
+                      ? 'Repair terms, guidance, and warranty information with sources you can inspect.'
                       : 'Revisit conversations, actions, sources, and the next step.'}
             </p>
           </div>
@@ -1247,7 +1233,7 @@ export default function Home() {
                   </div>
                   <div className="context-body sources">
                     {sources.length ? (
-                      sources.map((source) => <SourceCard key={source.chunkId} source={source} />)
+                      sources.map((source) => <SourceCard key={source.chunkId} source={source} technical />)
                     ) : (
                       <div className="context-empty">
                         <Search size={20} />
@@ -1485,17 +1471,39 @@ export default function Home() {
                 <BookOpen size={25} />
               </span>
               <div>
-                <h2>Your technical knowledge, connected.</h2>
-                <p>Local embeddings + semantic and lexical retrieval. Every match is inspectable.</p>
+                <h2>Workshop knowledge you can check.</h2>
+                <p>
+                  Check answers against the documents. Include the appliance type or model for specific terms.
+                </p>
               </div>
             </div>
+            <label className="knowledge-domain-label" htmlFor="knowledge-domain">
+              Knowledge domain
+            </label>
+            <select
+              id="knowledge-domain"
+              className="knowledge-domain"
+              value={knowledgeDomain}
+              onChange={(e) => {
+                setKnowledgeDomain(e.target.value);
+                setSearchResults(undefined);
+              }}
+            >
+              <option value="repair">Appliance repair</option>
+              <option value="telecom">Telecom support</option>
+              <option value="general">General documents</option>
+            </select>
             <form
               className="knowledge-search"
               onSubmit={(e) => {
                 e.preventDefault();
-                void run(async () =>
-                  setSearchResults(await api('/knowledge/search', post({ query: search }))),
-                );
+                void run(async () => {
+                  const result = await api<EvidenceResult | RetrievedChunk[]>(
+                    '/knowledge/search',
+                    post({ query: search, domain: knowledgeDomain }),
+                  );
+                  setSearchResults(Array.isArray(result) ? { query: search, chunks: result } : result);
+                });
               }}
             >
               <Search size={19} />
@@ -1506,17 +1514,15 @@ export default function Home() {
                 id="kb-search"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Try “SIP 403 outbound UK”"
+                placeholder="Try “What is the warranty on washing machine repairs?”"
               />
               <button className="button primary" disabled={busy || !search.trim()}>
                 {busy ? <LoaderCircle size={15} className="spin" /> : 'Search knowledge'}
               </button>
             </form>
-            {searchResults.length > 0 && (
+            {searchResults && (
               <div className="search-results">
-                {searchResults.map((s) => (
-                  <SourceCard key={s.chunkId} source={s} />
-                ))}
+                <KnowledgeEvidence result={searchResults} technical />
               </div>
             )}
             <div className="upload-panel">
@@ -1544,11 +1550,42 @@ export default function Home() {
                     aria-label="Choose knowledge document"
                   />
                 </label>
+                <label className="upload-domain">
+                  Domain
+                  <select
+                    aria-label="Upload document domain"
+                    value={uploadDomain}
+                    disabled={uploading}
+                    onChange={(e) => setUploadDomain(e.target.value)}
+                  >
+                    <option value="repair">Appliance repair</option>
+                    <option value="telecom">Telecom</option>
+                    <option value="general">General documents</option>
+                  </select>
+                </label>
                 <button className="button primary" disabled={uploading || !uploadFile}>
                   {uploading ? <LoaderCircle className="spin" size={14} /> : <Upload size={14} />}
                   {uploading ? 'Indexing…' : 'Upload & index'}
                 </button>
               </form>
+              <details className="upload-metadata">
+                <summary>Document version and applicability</summary>
+                <label htmlFor="upload-metadata">Metadata JSON (optional)</label>
+                <textarea
+                  id="upload-metadata"
+                  value={uploadMetadata}
+                  onChange={(e) => setUploadMetadata(e.target.value)}
+                  disabled={uploading}
+                  rows={3}
+                  placeholder={'{"version":"1","status":"active","effectiveFrom":"2026-09-16"}'}
+                />
+                <p>
+                  Choose the domain above. Use version, status, effectiveFrom, effectiveTo, policyKey,
+                  appliance, and models to define when the document applies. Before replacing a document,
+                  delete its old version or upload the same file with status: archived. Two active versions of
+                  the same policyKey may require a specialist to review them.
+                </p>
+              </details>
               {uploadStatus && (
                 <p className="upload-status" role="status">
                   {uploadStatus}
@@ -1572,6 +1609,18 @@ export default function Home() {
                   </span>
                   <h3>{doc.title}</h3>
                   <p>{doc.source}</p>
+                  {doc.metadata && (
+                    <p className="document-metadata">
+                      {[
+                        doc.metadata.domain,
+                        doc.metadata.version ? `Version ${doc.metadata.version}` : '',
+                        doc.metadata.status,
+                        doc.metadata.effectiveFrom ? `from ${doc.metadata.effectiveFrom}` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
                   <div>
                     <span>{doc.type}</span>
                     <span>

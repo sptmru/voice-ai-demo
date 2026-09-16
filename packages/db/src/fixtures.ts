@@ -119,5 +119,50 @@ export function scenarioSnapshot(scenario: ScenarioId): Snapshot {
       ],
     };
   }
+  if (scenario.startsWith('repair-')) {
+    snapshot.account.products = ['Relay Workshop'];
+    snapshot.calls = [];
+    snapshot.repair = {
+      services: [
+        {
+          id: 'workshop-diagnosis',
+          name: 'Workshop diagnosis',
+          durationMinutes: 60,
+          priceAMD: 5000,
+          creditAgainstRepair: true,
+          location: 'workshop',
+        },
+        {
+          id: 'home-diagnosis',
+          name: 'Home visit and diagnosis in Yerevan',
+          durationMinutes: 60,
+          priceAMD: 8000,
+          creditAgainstRepair: false,
+          location: 'home',
+        },
+      ],
+      jobs: [
+        {
+          id: 'REP-1042',
+          customerId: demoCustomer.id,
+          appliance: 'washing-machine',
+          model: 'Relay Wash W100',
+          status: 'awaiting_approval',
+          note: 'Diagnosis is complete. Approve the quote with an operator before work begins; repair has not started.',
+          estimateAMD: 20000,
+          diagnosisCreditAMD: 5000,
+          readyAt: null,
+        },
+      ],
+    };
+    snapshot.business = {
+      services: snapshot.repair.services.map(({ id, name, durationMinutes }) => ({
+        id,
+        name,
+        durationMinutes,
+      })),
+      orders: [],
+    };
+  }
   return snapshot;
 }

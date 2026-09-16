@@ -7,10 +7,12 @@ import { z } from 'zod';
 import { parseDocument } from '../../../packages/rag/src/index.js';
 import type { RetrievalService } from '../../../packages/core/src/domain.js';
 
+import { knowledgeMetadataSchema } from '../../../packages/rag/src/evidence.js';
+
 export function attachKnowledgeUpload(app: Express, rag: RetrievalService) {
   const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 1 },
+    limits: { fileSize: 5 * 1024 * 1024, files: 1, fields: 3 },
   });
   let indexing = false;
   app.post(
@@ -33,6 +35,16 @@ export function attachKnowledgeUpload(app: Express, rag: RetrievalService) {
         .max(160)
         .optional()
         .parse(req.body.title || undefined);
+      let metadataInput: unknown = {};
+      if (req.body.metadata) {
+        try {
+          metadataInput = JSON.parse(req.body.metadata);
+        } catch {
+          res.status(400).json({ error: 'Metadata must be valid JSON.' });
+          return;
+        }
+      } else if (req.body.domain) metadataInput = { domain: req.body.domain };
+      const metadata = knowledgeMetadataSchema.parse(metadataInput);
       const filename = basename(req.file.originalname)
         .replace(/[^\w.\- ]/g, '_')
         .slice(0, 180);
@@ -57,6 +69,7 @@ export function attachKnowledgeUpload(app: Express, rag: RetrievalService) {
           ...parsed,
           title: title || parsed.title,
           source: `uploads/${digest}/${filename}`,
+          metadata,
         });
         res.status(201).json({ document, durationMs: Date.now() - started, status: 'indexed' });
       } finally {

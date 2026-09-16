@@ -53,6 +53,7 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
     content: string | Buffer = '',
     mime = 'text/plain',
     title?: string,
+    metadata?: Record<string, unknown>,
   ) {
     const form = new FormData();
     if (filename)
@@ -64,6 +65,7 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
         filename,
       );
     if (title !== undefined) form.set('title', title);
+    if (metadata !== undefined) form.set('metadata', JSON.stringify(metadata));
     const response = await fetch(`${base}/api/knowledge/upload`, { method: 'POST', body: form });
     return { response, body: (await response.json()) as any };
   }
@@ -88,6 +90,7 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
       type: string;
       semanticScore: number;
       lexicalScore: number;
+      page?: number;
     }[];
   }
 
@@ -190,6 +193,11 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
         (chunk) => chunk.documentId === result.body.document.id && /portfolio/i.test(chunk.content),
       ),
     ).toBe(true);
+    expect(
+      retrieved
+        .filter((chunk) => chunk.documentId === result.body.document.id)
+        .every((chunk) => Number.isInteger(chunk.page) && chunk.page! >= 1),
+    ).toBe(true);
   });
 
   it('returns 400 for a missing file and 415 for unsupported extensions without indexing', async () => {
@@ -199,6 +207,47 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
       (await upload('executable.exe', 'This is not a supported knowledge document format.')).response.status,
     ).toBe(415);
     expect(await counts()).toEqual(before);
+  });
+
+  it('validates version metadata and excludes archived documents from scoped evidence', async () => {
+    const text = '# ORBIT repair policy\nORBIT repair warranty lasts 90 days after collection.';
+    const invalid = await upload('version.md', text, 'text/markdown', undefined, {
+      domain: 'repair',
+      effectiveFrom: '2026-02-30',
+    });
+    expect(invalid.response.status).toBe(400);
+    const active = await upload('version.md', text, 'text/markdown', undefined, {
+      domain: 'repair',
+      version: '2026.09',
+      policyKey: 'orbit-repair',
+      status: 'active',
+    });
+    expect(active.response.status).toBe(201);
+    expect(active.body.document.metadata).toMatchObject({ domain: 'repair', version: '2026.09' });
+    const inspect = async () => {
+      const response = await fetch(`${base}/api/knowledge/search`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: 'ORBIT repair warranty', domain: 'repair' }),
+      });
+      expect(response.status).toBe(200);
+      return response.json() as Promise<any>;
+    };
+    expect(await inspect()).toMatchObject({
+      status: 'supported',
+      chunks: expect.arrayContaining([expect.objectContaining({ documentId: active.body.document.id })]),
+    });
+    const archived = await upload('version.md', text, 'text/markdown', undefined, {
+      domain: 'repair',
+      version: '2026.09',
+      policyKey: 'orbit-repair',
+      status: 'archived',
+    });
+    expect(archived.body.document.id).toBe(active.body.document.id);
+    const result = await inspect();
+    expect(
+      result.chunks.some((chunk: { documentId: string }) => chunk.documentId === active.body.document.id),
+    ).toBe(false);
   });
 
   it('returns 422 for invalid PDF signatures, invalid UTF-8 and empty text without partial documents', async () => {

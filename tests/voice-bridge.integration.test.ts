@@ -9,6 +9,7 @@ import { attachVoiceBridge } from '../apps/api/src/voice.js';
 import { PostgresRepository } from '../packages/db/src/index.js';
 import { migrate } from '../packages/db/src/migrate.js';
 import { seedOperationalData } from '../scripts/seed.js';
+import { getCalendarService } from '../packages/integrations/src/calendar.js';
 import type { RetrievalService, ScenarioId } from '../packages/core/src/domain.js';
 import type {
   RealtimeVoiceProvider,
@@ -123,6 +124,17 @@ describe.skipIf(!databaseUrl)(
       return { server, bridge, base, ...services };
     }
     beforeAll(async () => {
+      // Fail closed before any fixture can create a real event or call a paid provider.
+      for (const name of [
+        'GOOGLE_CALENDAR_ID',
+        'GOOGLE_CLIENT_ID',
+        'GOOGLE_CLIENT_SECRET',
+        'GOOGLE_REFRESH_TOKEN',
+        'GEMINI_API_KEY',
+        'OPENAI_API_KEY',
+      ])
+        expect(process.env[name] ?? '', `${name} must be blank in integration tests`).toBe('');
+      expect(getCalendarService().status().provider).toBe('demo');
       await admin.query('CREATE EXTENSION IF NOT EXISTS vector');
       await admin.query(`CREATE SCHEMA ${schema}`);
       await migrate(pool);
@@ -232,6 +244,178 @@ describe.skipIf(!databaseUrl)(
         input: { provider: 'demo', start: slot.start },
       });
       await wire.stop();
+    });
+
+    it('books repair diagnosis through the real bridge and records a factual demo outcome', async () => {
+      expect(getCalendarService().status().provider).toBe('demo');
+      const session = await start(app, 'repair-booking');
+      const wire = await connected(session);
+      try {
+        expect(wire.provider.config?.instructions).toContain('intent repair_support');
+        expect(wire.provider.config?.instructions).toContain('Never silently book');
+        expect(wire.provider.config?.instructions).not.toContain('For a reported call failure');
+        const call = async (id: string, name: string, input: unknown) => {
+          wire.provider.emit({ type: 'toolCall', id, name, input });
+          const calls = await eventually(
+            () => vi.mocked(wire.provider.session.sendToolResult).mock.calls,
+            (all) => all.some(([result]) => result.id === id),
+            `repair tool ${name}`,
+          );
+          const result = calls.find(([result]) => result.id === id)![0];
+          expect(result.status).toBe('completed');
+          return result.result;
+        };
+        wire.send({
+          type: 'text',
+          text: 'I want to book a diagnosis for my Relay Wash W100 washing machine. It will not drain.',
+        });
+        await eventually(
+          () => repo.getEvents(session.id),
+          (all) => all.some((e) => e.type === 'transcript' && String(e.payload.text).includes('W100')),
+        );
+        await call('repair-context', 'update_repair_context', {
+          appliance: 'washing-machine',
+          model: 'Relay Wash W100',
+          issue: 'Will not drain',
+        });
+        expect((await repo.getSession(session.id)).snapshot.repair).toMatchObject({
+          appliance: 'washing-machine',
+          model: 'W100',
+          issue: 'Will not drain',
+        });
+        await call('repair-slots', 'list_available_slots', { serviceId: 'workshop-diagnosis' });
+        expect(await repo.getActions(session.id)).toHaveLength(0);
+        const slot = (await repo.getSession(session.id)).snapshot.business!.offeredSlots![0];
+        expect(slot).toBeDefined();
+        wire.send({ type: 'text', text: 'Choose option 1' });
+        await eventually(
+          () => repo.getEvents(session.id),
+          (all) => all.some((e) => e.type === 'transcript' && e.payload.text === 'Choose option 1'),
+        );
+        await call('repair-book', 'book_appointment', { serviceId: 'workshop-diagnosis', ...slot });
+        await call('repair-outcome', 'complete_support_case', {
+          intent: 'repair_support',
+          severity: 'low',
+          product: 'Relay Workshop',
+          issue: 'Diagnosis appointment',
+          diagnosis: 'The appliance has been repaired.',
+          resolved: true,
+          nextAction: 'Use the repaired appliance.',
+        });
+        const saved = await repo.getSession(session.id);
+        expect(saved.outcome).toMatchObject({ intent: 'repair_support', resolved: true });
+        expect(saved.outcome?.diagnosis).toContain('Local demo diagnosis booking saved');
+        expect(saved.outcome?.diagnosis).toContain('Appliance repair is not confirmed');
+        expect(saved.outcome?.diagnosis).not.toContain('has been repaired');
+        expect(await repo.getActions(session.id)).toEqual([
+          expect.objectContaining({
+            kind: 'appointment',
+            input: expect.objectContaining({
+              provider: 'demo',
+              serviceId: 'workshop-diagnosis',
+              start: slot.start,
+            }),
+          }),
+        ]);
+        expect(wire.provider.session.sendToolResult).toHaveBeenCalledTimes(4);
+      } finally {
+        await wire.stop();
+      }
+    });
+
+    it('serializes repair evidence and insufficient status to the provider with persisted citations', async () => {
+      const originalRetrieve = rag.retrieve;
+      const retrieve: NonNullable<RetrievalService['retrieve']> = vi.fn(async ({ query }) => ({
+        status: query.includes('unknown') ? ('insufficient' as const) : ('supported' as const),
+        query,
+        rewrittenQuery: `W100 ${query}`,
+        reason: query.includes('unknown') ? 'No active evidence' : 'Active repair warranty',
+        chunks: query.includes('unknown')
+          ? []
+          : [
+              {
+                chunkId: 'repair-warranty-ru',
+                documentId: 'repair-warranty',
+                document: 'Repair warranty',
+                section: 'Warranty terms',
+                content: 'Warranty covers 90 calendar days on work and installed parts.',
+                source: 'docs/knowledge/repair/repair-warranty.md',
+                type: 'markdown',
+                semanticScore: 0.85,
+                lexicalScore: 0.4,
+                combinedScore: 0.04,
+                metadata: {
+                  domain: 'repair' as const,
+                  version: '2026-09',
+                  status: 'active' as const,
+                  policyKey: 'repair-warranty',
+                },
+              },
+            ],
+      }));
+      rag.retrieve = retrieve;
+      const session = await start(app, 'repair-advice');
+      const wire = await connected(session);
+      try {
+        const call = async (id: string, name: string, input: unknown) => {
+          wire.provider.emit({ type: 'toolCall', id, name, input });
+          const calls = await eventually(
+            () => vi.mocked(wire.provider.session.sendToolResult).mock.calls,
+            (all) => all.some(([r]) => r.id === id),
+          );
+          return calls.find(([r]) => r.id === id)![0];
+        };
+        await call('advice-context', 'update_repair_context', {
+          appliance: 'washing-machine',
+          model: 'Relay Wash W100',
+        });
+        const evidence = await call('advice-warranty', 'search_knowledge_base', {
+          query: 'What is the repair warranty?',
+        });
+        expect(evidence.status).toBe('completed');
+        expect(evidence.result).toMatchObject({
+          status: 'supported',
+          rewrittenQuery: 'W100 What is the repair warranty?',
+          chunks: [
+            expect.objectContaining({
+              document: 'Repair warranty',
+              source: 'docs/knowledge/repair/repair-warranty.md',
+              metadata: expect.objectContaining({ version: '2026-09' }),
+            }),
+          ],
+        });
+        expect(retrieve).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            domain: 'repair' as const,
+            context: expect.objectContaining({ appliance: 'washing-machine', model: 'W100' }),
+          }),
+        );
+        const unknown = await call('advice-unknown', 'search_knowledge_base', {
+          query: 'Tell me about an unknown model',
+        });
+        expect(unknown.result).toMatchObject({
+          status: 'insufficient',
+          chunks: [],
+          reason: 'No active evidence',
+        });
+        const events = await repo.getEvents(session.id);
+        expect(
+          events.find((e) => e.type === 'retrieval.completed' && e.correlationId === 'advice-warranty')
+            ?.payload,
+        ).toMatchObject({
+          status: 'supported',
+          count: 1,
+          chunks: [expect.objectContaining({ chunkId: 'repair-warranty-ru' })],
+        });
+        expect(
+          events.find((e) => e.type === 'retrieval.completed' && e.correlationId === 'advice-unknown')
+            ?.payload,
+        ).toMatchObject({ status: 'insufficient', count: 0 });
+        expect(await repo.getActions(session.id)).toHaveLength(0);
+      } finally {
+        rag.retrieve = originalRetrieve;
+        await wire.stop();
+      }
     });
 
     it('closes model audio after a voice handoff tool and rejects reconnection', async () => {
