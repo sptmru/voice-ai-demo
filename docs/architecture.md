@@ -1,5 +1,31 @@
 # Relay — Voice AI Support Engineer
 
+## Client demo extension (2026-09-16)
+
+The default presentation view adds appointment booking, lead qualification and
+fictional order support while retaining the technical workbench and seven telecom
+scenarios. `business-tools.ts` supplies scenario-checked tools;
+`business-runtime.ts` provides the explicit no-key multi-turn workflow. Voice uses
+`buildScenarioPrompt` with the same executor and persistence. No RAG engine change
+is part of this extension.
+
+`packages/integrations/src/calendar.ts` owns server-side Google OAuth, availability,
+time-zone-aware slots and event insertion. Appointment attempts use one stable
+calendar booking key per session, persist the pending selection before external
+work, and persist the confirmed event reference afterwards. Repeats must match the
+original selection. Unconfigured calendars explicitly use demo mode; partial
+configuration fails closed. See [calendar setup and limits](calendar.md).
+
+`004_handoff.sql` adds the persisted handoff state. Requesting a human snapshots a
+factual brief; accepting changes `waiting` to `accepted`. Owner-checked HTTP routes
+provide `/api/operator/queue`, `/api/sessions/:id/handoff`,
+`/api/sessions/:id/handoff/accept` and `/api/sessions/:id/operator/messages`.
+Customer and operator replies share the persisted transcript, with distinct roles.
+AI tools, confirmations and voice reconnection are disabled after transfer. The
+executor serializes tools and confirmations per session, and voice shutdown drains
+in-flight work before an HTTP handoff is committed. This is a browser demo of the
+operator workflow; there are no separate staff identities or telephone transfers.
+
 ## Scope and delivery
 
 Local, zero-cost-first demo for fictional CPaaS provider Relay. Implement and verify five runnable increments: (1) text support + PostgreSQL tools + hybrid RAG + live dashboard, (2) Gemini voice, (3) uploads and selective memory, (4) OpenAI voice, (5) scenarios, confirmations, escalation, inspection and deployment guide. Real provider calls require user-supplied keys; do not confuse contract tests with live validation. PSTN is optional and excluded from this delivery.

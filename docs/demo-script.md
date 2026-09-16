@@ -1,4 +1,17 @@
-# A three-minute portfolio walkthrough
+# Client demo walkthroughs
+
+## Business demo: appointment and handoff
+
+1. Open **Demo** and choose **Book an appointment**. Start voice, or use **Start in text** for the deterministic rehearsal. In text mode ask `Show available times`, then `Book option 1` after reading the offered times.
+2. Point out the calendar mode. A local demo booking is labelled as such. With Google configured, inspect the confirmed event and open its Google Calendar link. No invitation email is sent. Follow [calendar setup](calendar.md) before claiming a live integration.
+3. Show the result card and expand technical details to inspect the real saved tool calls. End the session and reopen it from history to demonstrate persistence.
+4. Start **Meet your next customer**. Say `Need: a booking assistant; Budget: 5000 USD; Timeline: next month`. The lead is saved locally. Ask `Book a meeting` to continue into availability and appointment booking.
+5. Start **Help with an order**. Ask about `ORD-1042`, then say `Change delivery to 25 King Street, London, SW1A 1AA`. Review the repeated address and reply `Confirm delivery change`. The result remains pending human review; delivery is not claimed to have changed.
+6. Use **Talk to a person** or ask the agent for an operator. Open **Operator desk**, review the reason, context and collected data, accept the conversation and reply. Return to the customer view to show the human message. AI voice and tool execution remain stopped.
+
+The operator desk shares this browser's session ownership cookie. Another tab in the same browser can demonstrate the operator/customer views; a separate browser cannot access those sessions. This is not a production multi-user contact center.
+
+## Original three-minute telecom walkthrough
 
 ## 0:00 — Introduce the workspace
 

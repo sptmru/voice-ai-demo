@@ -9,7 +9,7 @@ import { attachVoiceBridge } from '../apps/api/src/voice.js';
 import { PostgresRepository } from '../packages/db/src/index.js';
 import { migrate } from '../packages/db/src/migrate.js';
 import { seedOperationalData } from '../scripts/seed.js';
-import type { RetrievalService } from '../packages/core/src/domain.js';
+import type { RetrievalService, ScenarioId } from '../packages/core/src/domain.js';
 import type {
   RealtimeVoiceProvider,
   RealtimeVoiceSession,
@@ -117,6 +117,7 @@ describe.skipIf(!databaseUrl)(
             }
           : {}),
       });
+      services.setVoiceStopper(bridge.closeSession);
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
       const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       return { server, bridge, base, ...services };
@@ -139,11 +140,11 @@ describe.skipIf(!databaseUrl)(
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await admin.end();
     });
-    async function start(target = app) {
+    async function start(target = app, scenarioId: ScenarioId = 'carrier-incident') {
       const response = await fetch(`${target.base}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenarioId: 'carrier-incident' }),
+        body: JSON.stringify({ scenarioId }),
       });
       expect(response.status).toBe(201);
       const data = (await response.json()) as any;
@@ -198,6 +199,83 @@ describe.skipIf(!databaseUrl)(
         body: '{}',
       });
     }
+
+    it('uses the booking voice instructions and persists an appointment through real business tools', async () => {
+      const session = await start(app, 'appointment-booking');
+      const wire = await connected(session);
+      expect(wire.provider.config?.instructions).toContain('intent appointment_booking');
+      expect(wire.provider.config?.instructions).toContain('Calendar timezone:');
+      expect(wire.provider.config?.instructions).not.toContain('For a reported call failure');
+      const call = async (id: string, name: string, input: unknown) => {
+        wire.provider.emit({ type: 'toolCall', id, name, input });
+        await eventually(
+          () => repo.getEvents(session.id),
+          (events) => events.some((event) => event.correlationId === id && event.type === 'tool.completed'),
+        );
+      };
+      await call('voice-slots', 'list_available_slots', { serviceId: 'consultation' });
+      const slot = (await repo.getSession(session.id)).snapshot.business!.offeredSlots![0];
+      await call('voice-book', 'book_appointment', { serviceId: 'consultation', ...slot });
+      await call('voice-result', 'complete_support_case', {
+        intent: 'appointment_booking',
+        severity: 'low',
+        product: 'Consulting',
+        issue: 'Consultation booked',
+        diagnosis: 'Local demo appointment saved.',
+        resolved: true,
+        nextAction: 'Review the saved appointment.',
+      });
+      const saved = await repo.getSession(session.id);
+      expect(saved.outcome).toMatchObject({ intent: 'appointment_booking', resolved: true });
+      expect((await repo.getActions(session.id))[0]).toMatchObject({
+        kind: 'appointment',
+        input: { provider: 'demo', start: slot.start },
+      });
+      await wire.stop();
+    });
+
+    it('closes model audio after a voice handoff tool and rejects reconnection', async () => {
+      const session = await start();
+      const wire = await connected(session);
+      wire.provider.emit({
+        type: 'toolCall',
+        id: 'voice-handoff',
+        name: 'request_human_handoff',
+        input: { reason: 'Customer requested a person' },
+      });
+      await wire.closed;
+      expect((await repo.getSession(session.id)).handoff?.status).toBe('waiting');
+      expect(wire.provider.closed).toBe(true);
+      expect(app.voiceActive.has(session.id)).toBe(false);
+      const reconnect = socket(session);
+      await expect(reconnect.opened).rejects.toThrow();
+      await reconnect.closed;
+      const before = await repo.getEvents(session.id);
+      wire.provider.emit({
+        type: 'transcript',
+        role: 'assistant',
+        text: 'Late AI speech',
+        final: true,
+        itemId: 'late-ai-speech',
+      });
+      wire.provider.emit({ type: 'toolCall', id: 'late-tool', name: 'get_account', input: {} });
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      expect(await repo.getEvents(session.id)).toEqual(before);
+    });
+
+    it('drains and closes a live voice connection before an HTTP operator request', async () => {
+      const session = await start();
+      const wire = await connected(session);
+      const response = await fetch(`${app.base}/api/sessions/${session.id}/handoff`, {
+        method: 'POST',
+        headers: { Cookie: session.cookie, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: 'Talk to an operator' }),
+      });
+      expect(response.status).toBe(200);
+      await wire.closed;
+      expect(wire.provider.closed).toBe(true);
+      expect((await repo.getSession(session.id)).handoff?.status).toBe('waiting');
+    });
 
     it('rejects foreign-owner cookies and hostile origins before upgrade', async () => {
       const alice = await start();
@@ -423,7 +501,15 @@ describe.skipIf(!databaseUrl)(
         );
         expect(app.voiceActive.has(session.id)).toBe(true);
         expect((await end(session)).status).toBe(409);
+        let secondStopFinished = false;
+        const secondStop = app.bridge.closeSession(session.id).then(() => {
+          secondStopFinished = true;
+        });
+        await Promise.resolve();
+        await Promise.resolve();
+        expect(secondStopFinished).toBe(false);
         gate.release();
+        await secondStop;
         await wire.closed;
         await eventually(
           () => app.voiceActive.has(session.id),

@@ -1,6 +1,19 @@
-# Relay — Voice AI Support Engineer
+# Relay — Voice AI Demo Studio
 
-A local portfolio demo for a fictional telecom/CPaaS provider. Investigate calls, retrieve technical documentation, execute observable tools and produce a persisted support outcome. Built from [the implementation brief](docs/voice-ai-support-engineer-codex-prompt.pdf).
+A client demo for appointment booking, lead qualification, order support and technical telecom support. Talk to an agent, see its actions, inspect the saved result, and hand the conversation to a human operator. The telecom foundation was built from [the implementation brief](docs/voice-ai-support-engineer-codex-prompt.pdf).
+
+## Client demonstration
+
+**Demo** opens the presentation view: choose a business scenario, start voice or choose **Start in text**, and follow the suggested messages. **Live workspace** retains the detailed tool, source and diagnostic view. The three new business scenarios use the same persisted sessions, events and tool executor as voice.
+
+- **Book an appointment:** choose a consultation, inspect available slots and confirm one. With Google Calendar configured, the agent checks live availability and creates an actual calendar event. Without credentials it explicitly saves a local demo booking. See [Google Calendar setup](docs/calendar.md).
+- **Meet your next customer:** collect the actual need, budget and timeline into a local lead record, with an optional consultation booking.
+- **Help with an order:** inspect a fictional customer-owned order and confirm a delivery-change request. The request is saved locally for review; actual fulfillment is unchanged.
+- **Talk to a person:** transfer the saved context into **Operator desk**, accept the conversation and reply as a human. AI tools and voice stop at transfer. The desk is an owner-scoped browser demonstration, not production staff authentication or a telephone transfer.
+
+The original seven telecom scenarios remain available. The no-key text path is still a deterministic, finite workflow; voice models use scenario-specific instructions and the same validated tools. See the [demo walkthrough](docs/demo-script.md).
+
+Existing installations need the additive `004_handoff.sql` migration and an operational reseed for the three new scenario templates. The startup commands below perform both. Migration/seed preserve existing sessions and uploaded documents. Google Calendar events survive deletion of their local demo session.
 
 ## Run locally
 
@@ -37,15 +50,18 @@ Gemini was verified against the real API, including synthetic microphone speech 
 
 ## What is real and what is mocked
 
-| Component                                  | Implementation                                                                                                                                 |
-| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| Operational systems                        | Real PostgreSQL persistence over fictional seeded telecom/account data; no actual carrier/CRM integration                                      |
-| Text conversation                          | Explicit, evidence-driven deterministic policy, no LLM key required; finite support workflows, not a general chatbot                           |
-| Retrieval                                  | Actual local `Xenova/bge-small-en-v1.5`, 384-dimensional normalized embeddings, pgvector cosine + PostgreSQL full text, reciprocal-rank fusion |
-| Tickets, callbacks, follow-ups, escalation | Real local records; no email, callback, paging or external CRM dispatch                                                                        |
-| Sensitive reset                            | Explicit browser confirmation; simulated credential version changes atomically in session snapshot; never touches a live trunk                 |
-| Events and reports                         | Real persisted tool, retrieval, transcript, confirmation, timing and outcome events, replayed over SSE                                         |
-| Identity                                   | Fictional Acme customer; random HttpOnly browser ownership cookie isolates session API access; not production account authentication           |
+| Component                                  | Implementation                                                                                                                                                                            |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Operational systems                        | Real PostgreSQL persistence over fictional seeded telecom/account data; no actual carrier/CRM integration                                                                                 |
+| Appointment calendar                       | Real Google OAuth, FreeBusy and event insertion when configured; explicit local demo fallback otherwise. No attendee invitations are sent. Live Google verification requires credentials. |
+| Leads and store orders                     | Real local lead and delivery-change request records over fictional customer/order data; no external CRM or fulfillment updates                                                            |
+| Human handoff                              | Persisted owner-scoped operator queue and browser text replies; stops AI voice/tools. No PSTN transfer or external dispatch                                                               |
+| Text conversation                          | Explicit, evidence-driven deterministic policy, no LLM key required; finite support workflows, not a general chatbot                                                                      |
+| Retrieval                                  | Actual local `Xenova/bge-small-en-v1.5`, 384-dimensional normalized embeddings, pgvector cosine + PostgreSQL full text, reciprocal-rank fusion                                            |
+| Tickets, callbacks, follow-ups, escalation | Real local records; no email, callback, paging or external CRM dispatch                                                                                                                   |
+| Sensitive reset                            | Explicit browser confirmation; simulated credential version changes atomically in session snapshot; never touches a live trunk                                                            |
+| Events and reports                         | Real persisted tool, retrieval, transcript, confirmation, timing and outcome events, replayed over SSE                                                                                    |
+| Identity                                   | Fictional Acme customer; random HttpOnly browser ownership cookie isolates session API access; not production account authentication                                                      |
 
 The agent never exposes private model reasoning. Retrieved content is evidence, not instructions. The browser cannot select another customer through tool arguments. A spoken or typed “yes” cannot approve a sensitive tool; use its confirmation card.
 
@@ -62,7 +78,7 @@ pnpm test:e2e
 pnpm build
 ```
 
-Verified on 2026-09-15: **55 unit tests, 42 PostgreSQL/integration tests and 7 browser tests passed**, along with type checking and the production build. Full evidence and limitations are in [validation](docs/validation.md).
+Verified on 2026-09-16: **80 unit tests, 46 PostgreSQL/integration tests and 12 browser tests passed**, along with type checking and the production build. New Google Calendar HTTP calls were mocked; live calendar access and deployment of this extension remain unverified. Full evidence and limitations are in [validation](docs/validation.md).
 
 The production web build uses `.next-production`, separate from `.next` used by the dev server. Live verification scripts are documented in [providers](docs/providers.md); these make billed provider calls and are separate from automated fixture tests.
 

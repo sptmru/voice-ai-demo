@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { EmitEvent, Repository, RetrievalService } from './domain.js';
+import { isBusinessScenario } from './business-tools.js';
 import { createTools, type ToolDefinition } from './tools.js';
 import { sanitize } from './redaction.js';
 export { sanitize } from './redaction.js';
@@ -20,6 +21,7 @@ export interface ToolExecutionResult {
 export class ToolExecutor {
   readonly tools: ToolDefinition[];
   private inFlight = new Map<string, Promise<ToolExecutionResult>>();
+  private sessionQueue = new Map<string, Promise<void>>();
   constructor(
     private repo: Repository,
     private rag: RetrievalService,
@@ -36,6 +38,21 @@ export class ToolExecutor {
     return (type, payload, duration, correlation) =>
       base(type, sanitize(payload) as Record<string, unknown>, duration, correlation);
   }
+  /** Serialize mutation eligibility checks with execution, including human handoff and approval. */
+  private async serialize<T>(sessionId: string, task: () => Promise<T>): Promise<T> {
+    const work = (this.sessionQueue.get(sessionId) ?? Promise.resolve()).then(task);
+    // A rejected confirmation must not poison later work in this session.
+    const settled = work.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.sessionQueue.set(sessionId, settled);
+    try {
+      return await work;
+    } finally {
+      if (this.sessionQueue.get(sessionId) === settled) this.sessionQueue.delete(sessionId);
+    }
+  }
   async execute(sessionId: string, call: ToolCall): Promise<ToolExecutionResult> {
     if (!call.id || call.id.length > 200) throw new Error('A bounded tool call ID is required');
     // IDs are scoped to a server-owned session and bound to exact requested arguments.
@@ -47,7 +64,7 @@ export class ToolExecutor {
       await this.inFlight.get(key);
       return this.execute(sessionId, call);
     }
-    const work = this.run(sessionId, call, fingerprint);
+    const work = this.serialize(sessionId, () => this.run(sessionId, call, fingerprint));
     this.inFlight.set(key, work);
     try {
       return await work;
@@ -80,8 +97,24 @@ export class ToolExecutor {
         throw new Error(
           'Interrupted tool execution requires review; use a new request after checking records',
         );
+      if (session.handoff && call.name !== 'request_human_handoff')
+        throw new Error('Conversation transferred to a human operator');
       const tool = this.tools.find((t) => t.name === call.name);
       if (!tool) throw new Error(`Unknown tool: ${call.name}`);
+      if (
+        isBusinessScenario(session.scenarioId) &&
+        [
+          'get_account',
+          'get_recent_calls',
+          'get_call_details',
+          'check_trunk_status',
+          'check_number_configuration',
+          'get_service_incidents',
+          'reset_trunk_credentials',
+          'adjust_account_balance',
+        ].includes(tool.name)
+      )
+        throw new Error('Telecom tools are not available in this business scenario');
       const input = tool.inputSchema.parse(sanitize(tool.inputSchema.parse(call.input)));
       await emit(
         'tool.started',
@@ -138,7 +171,15 @@ export class ToolExecutor {
   }
   /** Only the trusted HTTP confirmation route may call this method, never model tools. */
   async confirm(sessionId: string, id: string, approve: boolean): Promise<ToolExecutionResult> {
+    return this.serialize(sessionId, () => this.runConfirmation(sessionId, id, approve));
+  }
+  private async runConfirmation(
+    sessionId: string,
+    id: string,
+    approve: boolean,
+  ): Promise<ToolExecutionResult> {
     const session = await this.repo.getSession(sessionId);
+    if (session.handoff) throw new Error('Conversation transferred to a human operator');
     if (session.status !== 'active') throw new Error('Session has ended');
     const emit = this.emit(sessionId);
     const confirmation = (await this.repo.getConfirmations(sessionId)).find((c) => c.id === id);

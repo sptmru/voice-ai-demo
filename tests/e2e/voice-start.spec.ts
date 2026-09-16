@@ -32,6 +32,8 @@ test('starting and resetting automatically connect voice to the newly created se
     });
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/sessions') && r.request().method() === 'POST',
   );
@@ -73,6 +75,8 @@ test('denied microphone access preserves the new session and allows text support
     socket.close();
   });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await expect(page.locator('.error-banner')).toContainText('Microphone permission denied');
   await expect(page.getByText('In session', { exact: true })).toBeVisible();
@@ -81,4 +85,37 @@ test('denied microphone access preserves the new session and allows text support
   await page.getByRole('button', { name: /Try: Our outbound calls/ }).click();
   await expect(page.locator('.ticket-link')).toContainText('TKT-', { timeout: 60000 });
   await expect(page.getByRole('button', { name: 'Reconnect voice', exact: true })).toBeVisible();
+});
+
+test('presentation text start bypasses microphone and handoff closes an active voice call', async ({
+  page,
+}) => {
+  const connected: string[] = [];
+  const stopped: string[] = [];
+  await page.routeWebSocket(/\/api\/sessions\/[^/]+\/voice$/, (socket) => {
+    socket.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'start') {
+        connected.push(socket.url());
+        socket.send(JSON.stringify({ type: 'ready' }));
+      }
+      if (message.type === 'stop') {
+        stopped.push(socket.url());
+        socket.close();
+      }
+    });
+  });
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Start in text', exact: true }).click();
+  await expect(page.getByText('In session', { exact: true })).toBeVisible();
+  expect(connected).toEqual([]);
+  await page.getByRole('button', { name: 'Connect voice', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Disconnect voice', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Talk to a person', exact: true }).click();
+  await expect(page.locator('.demo-handoff-banner')).toBeVisible();
+  expect(stopped).toEqual(connected);
+  expect(stopped).toHaveLength(1);
+  await expect(page.getByRole('button', { name: /^(Connect|Reconnect|Disconnect) voice$/ })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Connect voice', exact: true })).toBeDisabled();
 });

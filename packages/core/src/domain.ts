@@ -1,6 +1,9 @@
 import { z } from 'zod';
 
 export const scenarioIds = [
+  'appointment-booking',
+  'lead-qualification',
+  'order-support',
   'carrier-incident',
   'caller-id',
   'international-disabled',
@@ -9,9 +12,56 @@ export const scenarioIds = [
   'number-routing',
   'unknown',
 ] as const;
+export const telecomScenarioIds = scenarioIds.filter(
+  (id) => !['appointment-booking', 'lead-qualification', 'order-support'].includes(id),
+) as Exclude<(typeof scenarioIds)[number], 'appointment-booking' | 'lead-qualification' | 'order-support'>[];
 export const scenarioSchema = z.enum(scenarioIds);
 export type ScenarioId = z.infer<typeof scenarioSchema>;
-export const scenarios: { id: ScenarioId; label: string; prompt: string }[] = [
+export const scenarios: {
+  id: ScenarioId;
+  label: string;
+  prompt: string;
+  category?: string;
+  description?: string;
+  result?: string;
+  quickPrompts?: string[];
+}[] = [
+  {
+    id: 'appointment-booking',
+    label: 'Book a consultation',
+    category: 'Appointments',
+    description: 'Find a service and choose an available time.',
+    result: 'Calendar booking and conversation summary',
+    prompt: 'I would like to book a consultation. What times are available?',
+    quickPrompts: ['Show available times', 'Book option 1', 'Talk to a person'],
+  },
+  {
+    id: 'lead-qualification',
+    label: 'Qualify a sales lead',
+    category: 'Sales',
+    description: 'Turn an inquiry into a qualified lead and a meeting.',
+    result: 'Saved lead with need, budget and timeline',
+    prompt: 'We want a voice agent for incoming calls. Can we discuss our project?',
+    quickPrompts: [
+      'Need: automate incoming calls; Budget: $5000; Timeline: next month',
+      'Book a meeting',
+      'Talk to a person',
+    ],
+  },
+  {
+    id: 'order-support',
+    label: 'Help with an order',
+    category: 'Retail',
+    description: 'Look up a demo order and request a delivery change.',
+    result: 'Verified order status and saved delivery request',
+    prompt: 'Where is my order ORD-1042? Can I change delivery?',
+    quickPrompts: [
+      'Where is order ORD-1042?',
+      'Change delivery to 25 Market Street, London',
+      'Confirm delivery change',
+      'Talk to a person',
+    ],
+  },
   {
     id: 'carrier-incident',
     label: 'UK carrier incident',
@@ -106,7 +156,27 @@ export interface Incident {
   startedAt: string;
   description: string;
 }
+export interface BusinessState {
+  services: { id: string; name: string; durationMinutes: number }[];
+  orders: {
+    id: string;
+    customerId: string;
+    items: string[];
+    status: 'processing' | 'shipped' | 'delivered';
+    deliveryAddress: string;
+    estimatedDelivery: string;
+  }[];
+  serviceId?: string;
+  pendingBooking?: { serviceId: string; start: string; end: string };
+  offeredSlots?: { start: string; end: string }[];
+  calendarProvider?: 'google' | 'demo';
+  calendarTimeZone?: string;
+  lead?: { need?: string; budget?: string; timeline?: string };
+  selectedOrderId?: string;
+  pendingDeliveryAddress?: string;
+}
 export interface Snapshot {
+  business?: BusinessState;
   account: Account;
   calls: TelecomCall[];
   trunk: Trunk;
@@ -115,7 +185,13 @@ export interface Snapshot {
 }
 export const outcomeSchema = z.object({
   customer: z.string(),
-  intent: z.enum(['technical_support', 'account_support']),
+  intent: z.enum([
+    'technical_support',
+    'account_support',
+    'appointment_booking',
+    'lead_qualification',
+    'order_support',
+  ]),
   severity: z.enum(['low', 'medium', 'high', 'critical']),
   product: z.string(),
   issue: z.string(),
@@ -127,6 +203,8 @@ export const outcomeSchema = z.object({
 });
 export type CallOutcome = z.infer<typeof outcomeSchema>;
 export type EventType =
+  | 'handoff.requested'
+  | 'handoff.accepted'
   | 'customer.identified'
   | 'retrieval.started'
   | 'retrieval.completed'
@@ -158,7 +236,15 @@ export type EmitEvent = (
   durationMs?: number,
   correlationId?: string,
 ) => Promise<AgentEvent>;
+export interface HandoffState {
+  status: 'waiting' | 'accepted';
+  reason: string;
+  summary: string;
+  requestedAt: string;
+  acceptedAt?: string;
+}
 export interface SupportSession {
+  handoff?: HandoffState;
   id: string;
   customerId: string;
   scenarioId: ScenarioId;
@@ -224,7 +310,9 @@ export interface Repository {
   deleteSession(id: string): Promise<boolean>;
   updateSession(
     id: string,
-    patch: Partial<Pick<SupportSession, 'status' | 'endedAt' | 'diagnosis' | 'outcome' | 'snapshot'>>,
+    patch: Partial<
+      Pick<SupportSession, 'status' | 'endedAt' | 'diagnosis' | 'outcome' | 'snapshot' | 'handoff'>
+    >,
   ): Promise<void>;
   appendEvent(
     sessionId: string,

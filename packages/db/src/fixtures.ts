@@ -100,5 +100,24 @@ export function scenarioSnapshot(scenario: ScenarioId): Snapshot {
       });
       break;
   }
+  if (['appointment-booking', 'lead-qualification', 'order-support'].includes(scenario)) {
+    snapshot.account.products = [scenario === 'order-support' ? 'Demo store' : 'Consulting'];
+    snapshot.business = {
+      services: [
+        { id: 'consultation', name: 'Discovery consultation', durationMinutes: 30 },
+        { id: 'implementation', name: 'Implementation planning', durationMinutes: 60 },
+      ],
+      orders: [
+        {
+          id: 'ORD-1042',
+          customerId: demoCustomer.id,
+          items: ['Wireless headset'],
+          status: 'processing',
+          deliveryAddress: '10 King Street, London',
+          estimatedDelivery: 'Within 3 business days (fictional demo order)',
+        },
+      ],
+    };
+  }
   return snapshot;
 }

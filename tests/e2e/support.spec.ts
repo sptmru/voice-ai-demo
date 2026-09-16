@@ -15,6 +15,8 @@ test('SIP 403 investigation persists a ticket, evidence and after-call report', 
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   await expect(page.getByRole('heading', { name: 'Every conversation. In context.' })).toBeVisible();
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await expect(page.getByText('In session', { exact: true })).toBeVisible();
@@ -37,6 +39,8 @@ test('SIP 403 investigation persists a ticket, evidence and after-call report', 
 test('credential reset is an explicit single-use confirmation and mobile layout fits', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   await page.getByLabel('Demo scenario').selectOption('invalid-credentials');
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await page.getByLabel('Message the support agent').fill('Please reset trunk credentials');
@@ -50,6 +54,8 @@ test('credential reset is an explicit single-use confirmation and mobile layout 
 
 test('knowledge search exposes vector and lexical evidence', async ({ page }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   await page
     .getByRole('button', { name: /Knowledge base/ })
     .first()
@@ -63,6 +69,8 @@ test('knowledge search exposes vector and lexical evidence', async ({ page }) =>
 
 test('uploaded knowledge becomes searchable from the dashboard', async ({ page }) => {
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   await page
     .getByRole('button', { name: /Knowledge base/ })
     .first()
@@ -103,6 +111,8 @@ test('session deletion confirms, reports a failed delete, and clears the selecte
 }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
+  await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
+  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/sessions') && r.request().method() === 'POST',
   );

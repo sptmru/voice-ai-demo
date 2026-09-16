@@ -2,6 +2,41 @@
 
 This file separates source implementation, local automated tests, and real provider evidence. All operational customer/carrier systems remain fictional local PostgreSQL data.
 
+## Business demo extension — 2026-09-16
+
+Implemented appointment booking, lead qualification, order support, Google Calendar
+adapter, presentation mode and a persisted browser operator handoff. Existing
+telecom scenarios remain. The RAG engine was not changed.
+
+| Check                                                       | Result                                                                |
+| ----------------------------------------------------------- | --------------------------------------------------------------------- |
+| `corepack pnpm test`                                        | **80 passed**                                                         |
+| `pnpm test:integration` in a one-off Compose API container  | **46 passed**, isolated PostgreSQL schemas and cached real embeddings |
+| `E2E_BASE_URL=http://127.0.0.1:3100 corepack pnpm test:e2e` | **12 passed** against a separate preview schema                       |
+| `corepack pnpm build`                                       | Passed, including root/web type checks and production Next.js build   |
+
+New coverage includes multi-turn business records, missing-field collection,
+timezone/afternoon selection, actual Google protocol with mocked HTTP, stable
+booking retries and recovery after local persistence failure, order ownership and
+confirmation, owner-scoped operator queues, customer/operator text exchange,
+voice closure/reconnection rejection after handoff, and a booking workflow through
+the real voice bridge with a simulated provider. Gated regressions cover sensitive
+confirmation racing handoff and repeated voice shutdown waiting for in-flight work.
+
+Browser checks exercise presentation, technical details, mobile overflow, explicit
+text startup with voice configured, handoff closing a browser voice connection,
+and the existing support/upload/delete/microphone flows. Screenshots:
+`test-results/business-appointment-desktop.png`,
+`test-results/business-retail-mobile.png`, `test-results/operator-desktop.png`.
+SSE-driven detail refreshes are coalesced to avoid request-limit bursts.
+
+**Live Google Calendar creation remains unverified:** the four required OAuth/
+calendar fields are absent from the local configuration. No external calendar
+event or new live model call was made during these checks. See
+[Google Calendar setup](calendar.md). The new version has not been deployed to the
+running/public demo; its database migration and new scenario seed have only been
+applied to isolated test/preview schemas.
+
 ## Milestones
 
 1. **Agent + tools + RAG:** implemented. Browser text, real seeded PostgreSQL/pgvector retrieval, actual registry execution, persisted tickets/outcomes and live SSE trace. Desktop/mobile browser flow passed.

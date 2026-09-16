@@ -12,6 +12,7 @@ const { app, errorHandler } = services;
 const server = createServer(app);
 const voice = attachVoiceBridge({ server, pool, repo, ...services });
 services.setConfirmationNotifier(voice.notifyConfirmation);
+services.setVoiceStopper(voice.closeSession);
 attachKnowledgeUpload(app, rag);
 app.use(errorHandler);
 const port = Number(process.env.PORT || 3101);

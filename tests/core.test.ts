@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
-  scenarioIds,
+  telecomScenarioIds,
   type AgentEvent,
   type MemoryItem,
   type PendingConfirmation,
@@ -156,9 +156,82 @@ function fixture() {
 }
 
 describe('provider-independent tool executor', () => {
+  it('serializes confirmation with human handoff while unrelated sessions remain available', async () => {
+    const { runtime, repo, actions } = fixture();
+    const session = await runtime.startSession('invalid-credentials');
+    const other = await runtime.startSession('carrier-incident');
+    await runtime.message(session.id, 'Investigate failing calls');
+    const pending = await runtime.executeTool(session.id, {
+      id: randomUUID(),
+      name: 'reset_trunk_credentials',
+      input: { reason: 'Customer approved rotation' },
+    });
+    let release!: () => void;
+    let entered!: () => void;
+    const enteredGate = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const releaseGate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const resolveConfirmation = repo.resolveConfirmation;
+    repo.resolveConfirmation = async (...args) => {
+      entered();
+      await releaseGate;
+      return resolveConfirmation(...args);
+    };
+    const confirmed = runtime.confirm(session.id, pending.confirmationId!, true);
+    await enteredGate;
+    const transfer = runtime.executeTool(session.id, {
+      id: randomUUID(),
+      name: 'request_human_handoff',
+      input: { reason: 'Please connect an operator' },
+    });
+    expect(
+      (await runtime.executeTool(other.id, { id: randomUUID(), name: 'get_customer', input: {} })).status,
+    ).toBe('completed');
+    expect((await repo.getSession(session.id)).handoff).toBeUndefined();
+    expect(actions).toHaveLength(0);
+    release();
+    expect((await confirmed).status).toBe('completed');
+    expect((await transfer).status).toBe('completed');
+    expect(actions.filter((action) => action.kind === 'credential-reset')).toHaveLength(1);
+    expect((await repo.getSession(session.id)).handoff?.status).toBe('waiting');
+    expect(
+      (
+        await runtime.executeTool(session.id, {
+          id: randomUUID(),
+          name: 'reset_trunk_credentials',
+          input: { reason: 'Try again' },
+        })
+      ).status,
+    ).toBe('failed');
+    expect(actions.filter((action) => action.kind === 'credential-reset')).toHaveLength(1);
+  });
+
+  it('recovers its session queue after a rejected confirmation', async () => {
+    const { runtime } = fixture();
+    const session = await runtime.startSession('carrier-incident');
+    await expect(runtime.confirm(session.id, 'missing-confirmation', true)).rejects.toThrow(
+      'Confirmation not found',
+    );
+    expect(
+      (await runtime.executeTool(session.id, { id: randomUUID(), name: 'get_customer', input: {} })).status,
+    ).toBe('completed');
+  });
+
   it('has all 12 PDF tools, provider-neutral JSON schemas and a human-only boundary', () => {
     const tools = createTools();
-    expect(tools).toHaveLength(15);
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining([
+        'get_customer',
+        'complete_support_case',
+        'book_appointment',
+        'save_lead',
+        'request_delivery_change',
+        'request_human_handoff',
+      ]),
+    );
     for (const tool of tools) expect(tool.jsonSchema.type).toBe('object');
     expect(tools.find((t) => t.name === 'adjust_account_balance')?.permission).toBe('human-only');
   });
@@ -344,7 +417,7 @@ describe('provider-independent tool executor', () => {
 });
 
 describe('deterministic evidence-driven runtime', () => {
-  it.each(scenarioIds)(
+  it.each(telecomScenarioIds)(
     'diagnoses %s using operational tools and persists a validated outcome',
     async (scenario) => {
       const { runtime, repo, rag, events } = fixture();

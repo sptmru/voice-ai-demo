@@ -1,3 +1,5 @@
+import { businessMessage } from './business-runtime.js';
+import { isBusinessScenario, businessIntent } from './business-tools.js';
 import type {
   Account,
   CallOutcome,
@@ -49,7 +51,12 @@ export class SupportRuntime {
   async executeTool(sessionId: string, call: ToolCall) {
     const result = await this.executor.execute(sessionId, call);
     const permission = this.executor.tools.find((tool) => tool.name === call.name)?.permission;
-    if (result.status === 'completed' && call.name !== 'complete_support_case' && permission !== 'read-only')
+    if (
+      result.status === 'completed' &&
+      call.name !== 'complete_support_case' &&
+      call.name !== 'request_human_handoff' &&
+      permission !== 'read-only'
+    )
       await this.refreshOutcome(sessionId);
     return result;
   }
@@ -61,7 +68,14 @@ export class SupportRuntime {
   /** Provider-neutral workflow inspection; returns tool names, never invents model answers. */
   async ensureVoiceOutcome(sessionId: string): Promise<string[]> {
     const session = await this.repo.getSession(sessionId);
-    if (session.status !== 'active') return [];
+    if (session.status !== 'active' || session.handoff) return [];
+    if (isBusinessScenario(session.scenarioId)) {
+      const actions = await this.repo.getActions(sessionId);
+      return actions.some((a) => ['appointment', 'lead', 'delivery-change'].includes(String(a.kind))) &&
+        !session.outcome
+        ? ['complete_support_case']
+        : [];
+    }
     const events = await this.repo.getEvents(sessionId);
     const completed = events.filter((event) => event.type === 'tool.completed');
     const diagnosticTools = new Set([
@@ -132,7 +146,31 @@ export class SupportRuntime {
     try {
       const session = await this.repo.getSession(id);
       if (session.status !== 'active') throw new Error('Session has ended');
+      if (session.handoff) {
+        await this.emit(id)('transcript', { role: 'user', text, final: true, mode: 'human' });
+        return { text: '' };
+      }
       await this.emit(id)('transcript', { role: 'user', text, final: true });
+      if (
+        /(?:talk|speak|transfer|connect).{0,30}(?:human|operator|manager|person)|(?:need|want)\s+(?:a\s+|an\s+|the\s+)?(?:human|operator|manager|person)|(?:human|operator|manager)\s*(?:please|support)|(?:позов|переключ|соедин|поговор|нужен|хочу).{0,35}(?:оператор|менеджер|человек)|^(?:human|operator|manager|оператор|менеджер|человек)[.!?\s]*$/i.test(
+          text,
+        ) &&
+        !/\b(?:don't|do not|without|no need)\b|не (?:нужен|хочу|надо)/i.test(text)
+      ) {
+        await this.tool(id, 'request_human_handoff', { reason: text.slice(0, 2000) });
+        return this.say(
+          id,
+          'I have passed this conversation to the operator queue. Your context is included.',
+        );
+      }
+      if (isBusinessScenario(session.scenarioId))
+        return await businessMessage(
+          session,
+          text,
+          this.repo,
+          (name, input = {}) => this.tool(id, name, input),
+          (message) => this.say(id, message),
+        );
       const reset = /reset|rotat|сброс/i.test(text) && /credential|password|trunk|парол/i.test(text);
       if (reset) {
         await this.tool(id, 'reset_trunk_credentials', { reason: text.slice(0, 4000) });
@@ -209,7 +247,7 @@ export class SupportRuntime {
       await this.emit(id)('error', { message, source: 'deterministic-runtime' });
       return this.say(
         id,
-        `I could not complete this step: ${message}. No service recovery has been confirmed.`,
+        `I could not complete this step: ${message}. Please review any saved actions before retrying.`,
       );
     } finally {
       this.busy.delete(id);
@@ -225,10 +263,17 @@ export class SupportRuntime {
     });
   }
   private async refreshOutcome(id: string) {
-    const outcome = (await this.repo.getSession(id)).outcome;
-    if (!outcome) return;
+    const session = await this.repo.getSession(id);
+    const outcome = session.outcome;
+    if (!outcome || session.handoff) return;
     const { customer: _, actions: __, ticketId: ___, ...input } = outcome;
-    await this.tool(id, 'complete_support_case', input);
+    try {
+      await this.tool(id, 'complete_support_case', input);
+    } catch (error) {
+      // A queued handoff may win between the read above and finalization. The completed
+      // action remains valid; the operator owns the next summary from this point onward.
+      if (!(await this.repo.getSession(id)).handoff) throw error;
+    }
   }
   private async diagnose(id: string, text: string) {
     await this.emit(id)('support.state', {
@@ -323,6 +368,43 @@ export class SupportRuntime {
     if (this.busy.has(id)) throw new Error('Wait for the current diagnostic turn to finish');
     let session = await this.repo.getSession(id);
     if (session.status === 'completed') return session;
+    if (session.handoff) {
+      const customer = await this.repo.getCustomer(session.customerId);
+      const actions = await this.repo.getActions(id);
+      const tickets = await this.repo.getTickets(id);
+      const outcome: CallOutcome = {
+        customer: customer.company,
+        intent: isBusinessScenario(session.scenarioId)
+          ? businessIntent(session.scenarioId)
+          : 'technical_support',
+        severity: session.outcome?.severity ?? 'low',
+        product: session.outcome?.product ?? session.snapshot.account.products[0] ?? 'Support',
+        issue: session.outcome?.issue ?? 'Human assistance requested',
+        diagnosis: session.handoff.summary,
+        resolved: false,
+        actions: actions.map((a) => `${String(a.kind)}:${String(a.id)}`),
+        ticketId: tickets.at(-1)?.id ?? null,
+        nextAction:
+          session.handoff.status === 'accepted'
+            ? 'The operator accepted this conversation; review the transcript for follow-up.'
+            : 'An operator must follow up on the transferred conversation.',
+      };
+      await this.repo.updateSession(id, { outcome, diagnosis: outcome.diagnosis });
+      await this.emit(id)('call.outcome', { outcome });
+      session = await this.repo.getSession(id);
+    }
+    if (!session.outcome && isBusinessScenario(session.scenarioId)) {
+      await this.tool(id, 'complete_support_case', {
+        intent: businessIntent(session.scenarioId),
+        severity: 'low',
+        product: session.snapshot.account.products[0] ?? 'Business demo',
+        issue: 'Incomplete business conversation',
+        diagnosis: 'The conversation ended before a completed business result was recorded.',
+        resolved: false,
+        nextAction: 'Review the conversation and any saved actions, then follow up with the customer.',
+      });
+      session = await this.repo.getSession(id);
+    }
     if (!session.outcome) {
       const events = await this.repo.getEvents(id);
       const tickets = await this.repo.getTickets(id);
@@ -355,7 +437,7 @@ export class SupportRuntime {
         nextAction:
           'A human engineer should review the recorded evidence, complete the investigation and verify service recovery.',
       });
-    } else await this.refreshOutcome(id);
+    } else if (!session.handoff) await this.refreshOutcome(id);
     session = await this.repo.getSession(id);
     if (session.outcome) {
       const summary = `${session.outcome.issue}. ${session.outcome.diagnosis} Next: ${session.outcome.nextAction}${session.outcome.ticketId ? ` Ticket ${session.outcome.ticketId}.` : ''}`;

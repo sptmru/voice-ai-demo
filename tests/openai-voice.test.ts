@@ -103,7 +103,7 @@ describe('OpenAI GA WebRTC and trusted sideband adapter', () => {
       create_response: false,
       interrupt_response: true,
     });
-    expect(initial.tools).toHaveLength(15);
+    expect(initial.tools.map((tool: { name: string }) => tool.name)).toEqual(tools.map((tool) => tool.name));
     expect(initial.tools[0].parameters.$schema).toBeUndefined();
     expect(f.factory.mock.calls[0][0]).toBe('wss://api.openai.com/v1/realtime?call_id=rtc_test');
     f.socket.open();

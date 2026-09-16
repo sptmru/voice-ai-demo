@@ -34,6 +34,7 @@ const sessionFromRow = (row: Row): SupportSession => ({
   snapshot: row.snapshot,
   outcome: row.outcome,
   diagnosis: row.diagnosis,
+  ...(row.handoff ? { handoff: row.handoff } : {}),
 });
 const confirmationFromRow = (row: Row): PendingConfirmation => ({
   id: row.id,
@@ -62,7 +63,10 @@ const actionFromRow = (row: Row): Record<string, unknown> => ({
   input: row.input,
   status: row.status,
   createdAt: iso(row.created_at),
-  dispatch: 'Mocked: recorded locally; no external message or carrier change sent.',
+  dispatch:
+    row.kind === 'appointment' && row.input?.provider === 'google'
+      ? 'Created in Google Calendar; no attendee invitations sent.'
+      : 'Demo: recorded locally; no external message or fulfillment change sent.',
 });
 
 export class PostgresRepository implements Repository {
@@ -130,12 +134,13 @@ export class PostgresRepository implements Repository {
       diagnosis: 'diagnosis',
       outcome: 'outcome',
       snapshot: 'snapshot',
+      handoff: 'handoff',
     } as const;
     const entries = Object.entries(patch).filter(([key, value]) => key in fields && value !== undefined);
     if (!entries.length) return;
     const assignments = entries.map(([key], index) => `${fields[key as keyof typeof fields]}=$${index + 2}`);
     const values = entries.map(([key, value]) =>
-      key === 'snapshot'
+      key === 'snapshot' || key === 'handoff'
         ? JSON.stringify(value)
         : key === 'outcome'
           ? JSON.stringify(sanitize(value))
@@ -220,10 +225,17 @@ export class PostgresRepository implements Repository {
     input = sanitize(input) as typeof input;
     if (kind === 'credential-reset') return this.resetCredentials(sessionId, input, idempotencyKey);
     const { rows } = await this.database.query(
-      `INSERT INTO support_actions(id,session_id,customer_id,kind,input,idempotency_key)
-      SELECT $1,id,customer_id,$3,$4,$5 FROM support_sessions WHERE id=$2
+      `INSERT INTO support_actions(id,session_id,customer_id,kind,input,idempotency_key,status)
+      SELECT $1,id,customer_id,$3,$4,$5,$6 FROM support_sessions WHERE id=$2
       ON CONFLICT(session_id,idempotency_key) DO UPDATE SET idempotency_key=EXCLUDED.idempotency_key RETURNING *`,
-      [randomUUID(), sessionId, kind, JSON.stringify(input), idempotencyKey],
+      [
+        randomUUID(),
+        sessionId,
+        kind,
+        JSON.stringify(input),
+        idempotencyKey,
+        kind === 'appointment' && input.provider === 'google' ? 'confirmed_external' : 'recorded_locally',
+      ],
     );
     if (!rows[0]) throw new Error('Session not found');
     if (

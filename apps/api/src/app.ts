@@ -12,6 +12,9 @@ import {
   type RetrievalService,
 } from '../../../packages/core/src/domain.js';
 import { SupportRuntime } from '../../../packages/core/src/runtime.js';
+import { requestHandoff } from '../../../packages/core/src/handoff.js';
+import { sanitize } from '../../../packages/core/src/redaction.js';
+import { getCalendarService } from '../../../packages/integrations/src/calendar.js';
 import { EventStream } from './events.js';
 
 export const logger = pino({
@@ -38,6 +41,7 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
   const active = new Set<string>();
   const voiceActive = new Set<string>();
   let confirmationNotifier: ((id: string, result: unknown) => Promise<void>) | undefined;
+  let voiceStopper: ((id: string) => Promise<void>) | undefined;
   app.disable('x-powered-by');
   app.use(
     cors({ origin: (origin, cb) => cb(null, !origin || allowedOrigins.has(origin)), credentials: true }),
@@ -81,6 +85,7 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       voiceUrl: process.env.VOICE_PUBLIC_URL || null,
       textMode: 'Local diagnostic policy',
       externalSystems: 'Local PostgreSQL mocks',
+      calendar: getCalendarService().status(),
     }),
   );
   app.use('/api', (req, res, next) => {
@@ -143,7 +148,93 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       repo.getConfirmations(session.id),
       repo.getMemory(session.customerId),
     ]);
-    res.json({ session, customer, events, tickets, actions, confirmations, memory });
+    res.json({
+      session,
+      customer,
+      events,
+      tickets,
+      actions,
+      confirmations,
+      memory,
+      handoff: session.handoff ?? null,
+    });
+  });
+  app.get('/api/operator/queue', async (req, res) => {
+    const own = await pool.query<{ session_id: string }>(
+      'SELECT session_id FROM api_session_owners WHERE owner_hash=$1',
+      [ownerFromRequest(req)],
+    );
+    const sessions = await repo.listSessions(own.rows.map((row) => row.session_id));
+    res.json(
+      await Promise.all(
+        sessions
+          .filter((session) => session.status === 'active' && session.handoff)
+          .map(async (session) => ({
+            session,
+            customer: await repo.getCustomer(session.customerId),
+            handoff: session.handoff,
+          })),
+      ),
+    );
+  });
+  app.post('/api/sessions/:id/handoff', async (req, res) => {
+    await owned(req);
+    const { reason } = z
+      .object({ reason: z.string().trim().min(1).max(2000) })
+      .strict()
+      .parse(req.body);
+    const id = String(req.params.id);
+    const handoff = await lock(id, async () => {
+      await owned(req);
+      await voiceStopper?.(id);
+      if (voiceActive.has(id))
+        throw Object.assign(new Error('Disconnect voice before requesting an operator.'), { status: 409 });
+      return requestHandoff(repo, id, reason, stream.emitForSession(id));
+    });
+    res.json({ handoff });
+  });
+  app.post('/api/sessions/:id/handoff/accept', async (req, res) => {
+    await owned(req);
+    z.object({}).strict().parse(req.body);
+    const id = String(req.params.id);
+    const handoff = await lock(id, async () => {
+      await owned(req);
+      await voiceStopper?.(id);
+      const session = await repo.getSession(id);
+      if (session.status !== 'active' || !session.handoff)
+        throw Object.assign(new Error('No active handoff to accept'), { status: 409 });
+      if (session.handoff.status === 'accepted') return session.handoff;
+      const accepted = {
+        ...session.handoff,
+        status: 'accepted' as const,
+        acceptedAt: new Date().toISOString(),
+      };
+      await repo.updateSession(id, { handoff: accepted });
+      await stream.emitForSession(id)('handoff.accepted', { handoff: accepted });
+      return accepted;
+    });
+    res.json({ handoff });
+  });
+  app.post('/api/sessions/:id/operator/messages', async (req, res) => {
+    await owned(req);
+    const { text } = z
+      .object({ text: z.string().trim().min(1).max(4000) })
+      .strict()
+      .parse(req.body);
+    const id = String(req.params.id);
+    const event = await lock(id, async () => {
+      await owned(req);
+      const session = await repo.getSession(id);
+      if (session.status !== 'active' || session.handoff?.status !== 'accepted')
+        throw Object.assign(new Error('Accept the active conversation before replying'), { status: 409 });
+      return stream.emitForSession(id)('transcript', {
+        role: 'operator',
+        text: sanitize(text),
+        final: true,
+        mode: 'human',
+      });
+    });
+    res.json({ event });
   });
   app.get('/api/sessions/:id/events', async (req, res) => {
     await owned(req);
@@ -200,6 +291,8 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     idSchema.parse(req.params.confirmationId);
     const session = await repo.getSession(String(req.params.id));
     if (session.status !== 'active') throw Object.assign(new Error('Session has ended'), { status: 409 });
+    if (session.handoff)
+      throw Object.assign(new Error('AI actions are paused during operator handoff'), { status: 409 });
     const confirmation = (await repo.getConfirmations(session.id)).find(
       (c) => c.id === req.params.confirmationId,
     );
@@ -293,6 +386,9 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     isSessionBusy: (id: string) => active.has(id),
     setConfirmationNotifier: (notifier: typeof confirmationNotifier) => {
       confirmationNotifier = notifier;
+    },
+    setVoiceStopper: (stopper: typeof voiceStopper) => {
+      voiceStopper = stopper;
     },
   };
 }

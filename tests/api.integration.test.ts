@@ -153,6 +153,73 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     expect((await repo.getSession(alice.id)).status).toBe('active');
   });
 
+  it('persists an owner-scoped operator handoff and stops AI after transfer', async () => {
+    const alice = await start();
+    const bob = await start();
+    const path = `/api/sessions/${alice.id}`;
+    expect(
+      (await request(`${path}/handoff`, { cookie: bob.cookie, body: { reason: 'Help' } })).response.status,
+    ).toBe(404);
+    expect(
+      (await request(`${path}/operator/messages`, { cookie: alice.cookie, body: { text: 'Hello' } })).response
+        .status,
+    ).toBe(409);
+    const transfer = await request(`${path}/handoff`, {
+      cookie: alice.cookie,
+      body: { reason: 'Please connect a person' },
+    });
+    expect(transfer.body.handoff).toMatchObject({ status: 'waiting', reason: 'Please connect a person' });
+    expect(transfer.body.handoff.summary).toContain('Acme');
+    const same = await request(`${path}/handoff`, {
+      cookie: alice.cookie,
+      body: { reason: 'Please connect a person' },
+    });
+    expect(same.body.handoff).toEqual(transfer.body.handoff);
+    const queue = await request('/api/operator/queue', { cookie: alice.cookie });
+    expect(queue.body.map((row: any) => row.session.id)).toContain(alice.id);
+    const foreignQueue = await request('/api/operator/queue', { cookie: bob.cookie });
+    expect(foreignQueue.body.map((row: any) => row.session.id)).not.toContain(alice.id);
+    expect((await request(`${path}/handoff/accept`, { cookie: bob.cookie, body: {} })).response.status).toBe(
+      404,
+    );
+    const accepted = await request(`${path}/handoff/accept`, { cookie: alice.cookie, body: {} });
+    expect(accepted.body.handoff.status).toBe('accepted');
+    const repeated = await request(`${path}/handoff/accept`, { cookie: alice.cookie, body: {} });
+    expect(repeated.body.handoff.acceptedAt).toBe(accepted.body.handoff.acceptedAt);
+    const before = await repo.getEvents(alice.id);
+    const userMessage = await request(`${path}/messages`, {
+      cookie: alice.cookie,
+      body: { text: 'I still need help' },
+    });
+    expect(userMessage.response.status).toBe(200);
+    const reply = await request(`${path}/operator/messages`, {
+      cookie: alice.cookie,
+      body: { text: 'I am reviewing your request' },
+    });
+    expect(reply.body.event.payload).toMatchObject({ role: 'operator', mode: 'human' });
+    const after = (await repo.getEvents(alice.id)).filter((event) => event.id > (before.at(-1)?.id ?? 0));
+    expect(after.filter((event) => event.type === 'transcript').map((event) => event.payload.role)).toEqual([
+      'user',
+      'operator',
+    ]);
+    expect(after.some((event) => event.type === 'tool.started')).toBe(false);
+    const tool = await api.runtime.executeTool(alice.id, {
+      id: 'blocked-after-handoff',
+      name: 'create_support_ticket',
+      input: { subject: 'No', description: 'No', severity: 'low' },
+    });
+    expect(tool.status).toBe('failed');
+    expect(await repo.getTickets(alice.id)).toHaveLength(0);
+    const persisted = await new PostgresRepository(database).getSession(alice.id);
+    expect(persisted.handoff?.status).toBe('accepted');
+    await request(`${path}/end`, { cookie: alice.cookie, body: {} });
+    expect(
+      (await request(`${path}/operator/messages`, { cookie: alice.cookie, body: { text: 'Late reply' } }))
+        .response.status,
+    ).toBe(409);
+    expect((await request('/api/operator/queue', { cookie: alice.cookie })).body).toEqual([]);
+  });
+
   it('rejects a hostile browser Origin before creating any session', async () => {
     const before = Number((await database.query('SELECT count(*) FROM support_sessions')).rows[0].count);
     const result = await request('/api/sessions', {

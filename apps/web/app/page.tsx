@@ -38,6 +38,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { BrowserVoiceClient } from './voice-client';
+import { Presentation, OperatorPanel, type Handoff, type DemoScenario } from './presentation';
 import type {
   AgentEvent,
   Customer,
@@ -50,7 +51,8 @@ import type {
 } from '../../../packages/core/src/domain';
 
 type Config = {
-  scenarios: { id: string; label: string; prompt: string }[];
+  scenarios: DemoScenario[];
+  calendar?: { configured: boolean; provider?: string };
   voiceProvider: string;
   voiceUrl: string | null;
   providers: Record<string, { configured: boolean; model: string }>;
@@ -64,6 +66,7 @@ type Detail = {
   actions: Record<string, unknown>[];
   confirmations: PendingConfirmation[];
   memory: MemoryItem[];
+  handoff?: Handoff | null;
 };
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api${path}`, {
@@ -254,8 +257,11 @@ export default function Home() {
   const [config, setConfig] = useState<Config>();
   const [detail, setDetail] = useState<Detail>();
   const [events, setEvents] = useState<AgentEvent[]>([]);
-  const [scenario, setScenario] = useState('carrier-incident');
-  const [tab, setTab] = useState<'workspace' | 'knowledge' | 'history'>('workspace');
+  const [scenario, setScenario] = useState('appointment-booking');
+  const [tab, setTab] = useState<'demo' | 'workspace' | 'knowledge' | 'history' | 'operator'>('demo');
+  const [technicalDetails, setTechnicalDetails] = useState(false);
+  const [operatorInput, setOperatorInput] = useState('');
+  const [operatorQueue, setOperatorQueue] = useState<Detail[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -292,10 +298,21 @@ export default function Home() {
   const refreshVersion = useRef(0);
   const sessionId = detail?.session.id;
   const finished = detail?.session.status === 'completed';
+  const handoff = detail?.handoff || null;
   const refresh = useCallback(async (id: string) => {
     const version = ++refreshVersion.current;
     const value = await api<Detail>(`/sessions/${id}`);
-    if (version === refreshVersion.current && activeSessionRef.current === id) setDetail(value);
+    if (version === refreshVersion.current && activeSessionRef.current === id) {
+      setDetail(value);
+      setEvents(value.events);
+      if (value.handoff) {
+        const client = voiceRef.current;
+        voiceRef.current = null;
+        setVoiceState('idle');
+        setPartialTranscript('');
+        void client?.close();
+      }
+    }
     return value;
   }, []);
 
@@ -313,6 +330,15 @@ export default function Home() {
   useEffect(() => {
     if (!sessionId) return;
     const source = new EventSource(`/api/sessions/${sessionId}/events`);
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const scheduleRefresh = () => {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => {
+        void refresh(sessionId).catch((e) => {
+          if (activeSessionRef.current === sessionId) setError(e.message);
+        });
+      }, 150);
+    };
     source.onopen = () => {
       if (activeSessionRef.current !== sessionId) return;
       setConnection('live');
@@ -329,6 +355,13 @@ export default function Home() {
       setEvents((old) =>
         old.some((item) => item.id === data.id) ? old : [...old, data].sort((a, b) => a.id - b.id),
       );
+      if (String(data.type).startsWith('handoff.')) {
+        const client = voiceRef.current;
+        voiceRef.current = null;
+        setVoiceState('idle');
+        setPartialTranscript('');
+        void client?.close();
+      }
       if (data.type === 'call.outcome')
         setDetail((old) =>
           old?.session.id === sessionId
@@ -339,23 +372,21 @@ export default function Home() {
             : old,
         );
       if (
-        ['call.outcome', 'confirmation.required', 'confirmation.resolved', 'support.state'].includes(
-          data.type,
-        ) ||
-        (data.type === 'tool.completed' &&
-          [
-            'create_support_ticket',
-            'send_followup',
-            'schedule_callback',
-            'escalate_to_engineer',
-            'reset_trunk_credentials',
-          ].includes(String(data.payload.name)))
+        [
+          'call.outcome',
+          'confirmation.required',
+          'confirmation.resolved',
+          'support.state',
+          'handoff.requested',
+          'handoff.accepted',
+        ].includes(data.type) ||
+        data.type === 'transcript' ||
+        data.type === 'tool.completed'
       )
-        void refresh(sessionId).catch((e) => {
-          if (activeSessionRef.current === sessionId) setError(e.message);
-        });
+        scheduleRefresh();
     });
     return () => {
+      clearTimeout(refreshTimer);
       source.close();
       setConnection('offline');
     };
@@ -399,12 +430,13 @@ export default function Home() {
       setBusy(false);
     }
   }
-  async function start() {
+  async function start(textOnly = false) {
     await run(async () => {
       const previousVoice = voiceRef.current;
       voiceRef.current = null;
       setVoiceState('idle');
-      const client = config?.providers[voiceProvider]?.configured ? createVoiceClient() : undefined;
+      const client =
+        !textOnly && config?.providers[voiceProvider]?.configured ? createVoiceClient() : undefined;
       // Request permission/unlock audio within the click; no provider connection until the session exists.
       if (client) void client.prepare().catch(() => {});
       try {
@@ -420,7 +452,7 @@ export default function Home() {
         setInput('');
         setPartialTranscript('');
         await refresh(session.id);
-        setTab('workspace');
+        if (tab !== 'workspace') setTab('demo');
         if (client) await connectVoice(session.id, client);
       } catch (error) {
         await client?.close();
@@ -431,7 +463,7 @@ export default function Home() {
   async function send(text: string) {
     if (!sessionId || !text.trim() || busy || voiceBusy || finished) return;
     setInput('');
-    if (voiceConnected) {
+    if (voiceConnected && !handoff) {
       voiceRef.current?.sendText(text);
       return;
     }
@@ -483,7 +515,7 @@ export default function Home() {
       voiceRef.current = null;
       return;
     }
-    if (!sessionId || finished) return;
+    if (!sessionId || finished || handoff) return;
     await connectVoice(sessionId);
   }
   function createVoiceClient() {
@@ -521,7 +553,7 @@ export default function Home() {
       setError(`${e instanceof Error ? e.message : 'Voice failed'}. You can reconnect or continue in text.`);
     }
   }
-  async function openSession(id: string) {
+  async function openSession(id: string, destination: 'workspace' | 'operator' | 'demo' = 'workspace') {
     await run(async () => {
       await voiceRef.current?.close();
       voiceRef.current = null;
@@ -531,7 +563,30 @@ export default function Home() {
       const d = await refresh(id);
       setEvents(d.events);
       setScenario(d.session.scenarioId);
-      setTab('workspace');
+      setTab(destination);
+    });
+  }
+  async function handoffAction(accept = false) {
+    if (!sessionId) return;
+    await run(async () => {
+      const client = voiceRef.current;
+      voiceRef.current = null;
+      setVoiceState('idle');
+      setPartialTranscript('');
+      await client?.close();
+      await api(
+        `/sessions/${sessionId}/handoff${accept ? '/accept' : ''}`,
+        post(accept ? {} : { reason: 'The customer requested a team member.' }),
+      );
+      await refresh(sessionId);
+    });
+  }
+  async function sendOperatorMessage() {
+    if (!sessionId || !operatorInput.trim()) return;
+    await run(async () => {
+      await api(`/sessions/${sessionId}/operator/messages`, post({ text: operatorInput }));
+      setOperatorInput('');
+      await refresh(sessionId);
     });
   }
   function requestDelete(target: DeleteTarget) {
@@ -582,6 +637,7 @@ export default function Home() {
   }
   async function showTab(value: typeof tab) {
     setTab(value);
+    if (value === 'operator') await run(async () => setOperatorQueue(await api('/operator/queue')));
     if (value === 'history') await run(async () => setSessions(await api('/sessions')));
     if (value === 'knowledge') await run(async () => setDocuments(await api('/knowledge')));
   }
@@ -636,7 +692,7 @@ export default function Home() {
         <header className="topbar">
           <div className="wordmark">
             relay<span> / </span>
-            <span>Support studio</span>
+            <span>Voice studio</span>
           </div>
           <div className="topbar-right">
             <span className="environment">
@@ -647,25 +703,33 @@ export default function Home() {
             </a>
             <span className="topbar-separator" />
             <span className="company-mark">R</span>
-            <span>Relay Telecom</span>
+            <span>Relay Demo</span>
           </div>
         </header>
         <div className="page-heading">
           <div>
-            <div className="eyebrow">VOICE AI SUPPORT ENGINEER</div>
+            <div className="eyebrow">VOICE AI · BUSINESS DEMO</div>
             <h1>
-              {tab === 'workspace'
-                ? 'Every conversation. In context.'
-                : tab === 'knowledge'
-                  ? 'Answers start with evidence.'
-                  : 'A record of every resolution.'}
+              {tab === 'demo'
+                ? 'A conversation. A real next step.'
+                : tab === 'operator'
+                  ? 'Pick up with the full picture.'
+                  : tab === 'workspace'
+                    ? 'Every conversation. In context.'
+                    : tab === 'knowledge'
+                      ? 'Answers start with evidence.'
+                      : 'A record of every resolution.'}
             </h1>
             <p>
-              {tab === 'workspace'
-                ? 'A support engineer with the right tools, and nothing to hide.'
-                : tab === 'knowledge'
-                  ? 'Search the same technical knowledge your support agent uses.'
-                  : 'Revisit conversations, actions, sources, and the next step.'}
+              {tab === 'demo'
+                ? 'Choose a task, talk to your agent, and watch the work get done.'
+                : tab === 'operator'
+                  ? 'Review the context and continue in text. The AI pauses when a handoff is requested.'
+                  : tab === 'workspace'
+                    ? 'A support engineer with the right tools, and nothing to hide.'
+                    : tab === 'knowledge'
+                      ? 'Search the same technical knowledge your support agent uses.'
+                      : 'Revisit conversations, actions, sources, and the next step.'}
             </p>
           </div>
           <span className="version-chip">
@@ -673,6 +737,9 @@ export default function Home() {
           </span>
         </div>
         <nav className="tabs" aria-label="Workspace views">
+          <button className={tab === 'demo' ? 'selected' : ''} onClick={() => void showTab('demo')}>
+            <Sparkles size={16} /> Demo
+          </button>
           <button className={tab === 'workspace' ? 'selected' : ''} onClick={() => void showTab('workspace')}>
             <Radio size={16} /> Live workspace
           </button>
@@ -681,6 +748,9 @@ export default function Home() {
           </button>
           <button className={tab === 'history' ? 'selected' : ''} onClick={() => void showTab('history')}>
             <History size={16} /> Session history
+          </button>
+          <button className={tab === 'operator' ? 'selected' : ''} onClick={() => void showTab('operator')}>
+            <Headphones size={16} /> Operator desk
           </button>
           <span className="tabs-note">
             <ShieldCheck size={14} /> Observable actions. No hidden reasoning.
@@ -708,8 +778,53 @@ export default function Home() {
             </button>
           </div>
         )}
-        {tab === 'workspace' && (
-          <>
+        {tab === 'demo' && (
+          <Presentation
+            scenarios={config?.scenarios || []}
+            scenario={scenario}
+            onScenario={setScenario}
+            detail={detail}
+            events={events}
+            busy={busy}
+            ready={!!config}
+            input={input}
+            onInput={setInput}
+            onStart={(textOnly) => void start(textOnly)}
+            onSend={(text) => void send(text)}
+            onEnd={() => void end()}
+            voiceState={voiceState}
+            voiceAvailable={!!config?.providers[voiceProvider]?.configured}
+            muted={muted}
+            onMute={() => {
+              setMuted(!muted);
+              voiceRef.current?.mute(!muted);
+            }}
+            onToggleVoice={() => void toggleVoice()}
+            partialTranscript={partialTranscript}
+            seconds={seconds}
+            onHandoff={() => void handoffAction()}
+            onOpenOperator={() => void showTab('operator')}
+            technicalDetails={technicalDetails}
+            onTechnicalDetails={() => setTechnicalDetails(!technicalDetails)}
+          />
+        )}
+        {tab === 'operator' && (
+          <OperatorPanel
+            queue={operatorQueue}
+            detail={detail}
+            events={events}
+            busy={busy}
+            onRefresh={() => void showTab('operator')}
+            onOpen={(id) => void openSession(id, 'operator')}
+            onAccept={() => void handoffAction(true)}
+            input={operatorInput}
+            onInput={setOperatorInput}
+            onSend={() => void sendOperatorMessage()}
+            onEnd={() => void end()}
+          />
+        )}
+        {(tab === 'workspace' || (tab === 'demo' && technicalDetails)) && (
+          <div className={tab === 'demo' ? 'technical-workspace' : undefined}>
             <section className="scenario-bar">
               <div className="scenario-select">
                 <span className="scenario-symbol">
@@ -836,7 +951,11 @@ export default function Home() {
                     <button
                       className="button outline"
                       disabled={
-                        !sessionId || finished || busy || !config?.providers[voiceProvider]?.configured
+                        !sessionId ||
+                        finished ||
+                        !!handoff ||
+                        busy ||
+                        !config?.providers[voiceProvider]?.configured
                       }
                       onClick={() => void toggleVoice()}
                     >
@@ -885,7 +1004,13 @@ export default function Home() {
                       className={`transcript-turn ${e.payload.role === 'user' ? 'user-turn' : 'agent-turn'}`}
                     >
                       <div className="turn-author">
-                        <span>{e.payload.role === 'user' ? 'YOU' : 'RELAY AGENT'}</span>
+                        <span>
+                          {e.payload.role === 'user'
+                            ? 'YOU'
+                            : e.payload.role === 'operator'
+                              ? 'TEAM MEMBER'
+                              : 'RELAY AGENT'}
+                        </span>
                         <time>
                           {new Date(e.timestamp).toLocaleTimeString('en-GB', {
                             hour: '2-digit',
@@ -1351,7 +1476,7 @@ export default function Home() {
                 </details>
               </section>
             )}
-          </>
+          </div>
         )}
         {tab === 'knowledge' && (
           <section className="knowledge-view">
@@ -1526,7 +1651,7 @@ export default function Home() {
           <span>
             <AudioLines size={14} /> Built to make the work visible.
           </span>
-          <span>Fictional company · Local operational systems · Real retrieval</span>
+          <span>Fictional business data · Google Calendar when connected · Real retrieval</span>
         </footer>
       </main>
     </div>

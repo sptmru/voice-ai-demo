@@ -60,7 +60,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     await migrate();
     await seedOperationalData();
     await seedKnowledge();
-    console.log('Seed complete: Acme Ltd, 7 isolated scenario templates and telecom knowledge.');
+    console.log(
+      `Seed complete: Acme Ltd, ${scenarioIds.length} isolated scenario templates and telecom knowledge.`,
+    );
   })()
     .catch((error) => {
       console.error(error);

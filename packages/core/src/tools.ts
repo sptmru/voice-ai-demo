@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import {
+  createBusinessTools,
+  isBusinessScenario,
+  businessIntent,
+  validateBusinessOutcome,
+} from './business-tools.js';
+import { createHandoffTools } from './handoff.js';
 import { zodToJsonSchema } from 'zod-to-json-schema';
 import {
   outcomeSchema,
@@ -45,6 +52,8 @@ function define<T>(
 }
 export function createTools(): ToolDefinition[] {
   return [
+    ...createBusinessTools(),
+    ...createHandoffTools(),
     define(
       'get_customer',
       'Identify the customer bound to this support session.',
@@ -219,11 +228,20 @@ export function createTools(): ToolDefinition[] {
         const latestCall = [...c.session.snapshot.calls].sort((a, b) =>
           b.startedAt.localeCompare(a.startedAt),
         )[0];
-        if (input.resolved && (!latestCall || latestCall.status !== 'completed'))
+        if (
+          !isBusinessScenario(c.session.scenarioId) &&
+          input.resolved &&
+          (!latestCall || latestCall.status !== 'completed')
+        )
           throw new Error('Cannot mark resolved without a successful latest test call');
         const customer = await c.repo.getCustomer(c.session.customerId);
         const tickets = await c.repo.getTickets(c.session.id);
         const actions = await c.repo.getActions(c.session.id);
+        if (isBusinessScenario(c.session.scenarioId)) {
+          if (input.intent !== businessIntent(c.session.scenarioId))
+            throw new Error('Outcome intent does not match this scenario');
+          await validateBusinessOutcome(c.session, input.resolved, actions);
+        }
         const completedTools = (await c.repo.getEvents(c.session.id))
           .filter(
             (event) =>
