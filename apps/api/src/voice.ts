@@ -127,7 +127,8 @@ export function attachVoiceBridge({
       }
     };
     const record = async (event: VoiceEvent) => {
-      if (stopped) return;
+      // Drain already accepted transcripts and terminal diagnostics on shutdown.
+      // Tool execution still stops immediately below.
       if (event.type === 'toolCall') {
         if (cancelled.has(event.id) || stopped) return;
         const result = await runtime.executeTool(sessionId, {
@@ -240,6 +241,9 @@ export function attachVoiceBridge({
     ws.on('close', () => void stop());
     ws.on('error', () => void stop());
     ws.on('message', (data) => {
+      // Microphone frames may already be in flight when a handoff closes voice.
+      // They are not failed customer operations and must not overwrite the UI.
+      if (stopped) return;
       void (async () => {
         const parsed = clientEventSchema.parse(JSON.parse(data.toString()));
         if (parsed.type === 'stop') {

@@ -24,9 +24,11 @@ for (const [width, workspace] of [
     let connections = 0,
       stopped = 0,
       attempts = 0;
+    const sentText: string[] = [];
     await page.routeWebSocket(/\/api\/sessions\/[^/]+\/voice$/, (socket) => {
       socket.onMessage((raw) => {
         const message = JSON.parse(String(raw));
+        if (message.type === 'text') sentText.push(message.text);
         if (message.type === 'start') {
           connections++;
           socket.send(JSON.stringify({ type: 'ready' }));
@@ -52,6 +54,13 @@ for (const [width, workspace] of [
     await expect(page.locator('body')).not.toContainText('SIP Trunking');
     await page.getByRole('button', { name: 'Start session', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Disconnect voice', exact: true })).toBeVisible();
+    if (!workspace) {
+      await expect(page.getByRole('button', { name: 'Try: Talk to an operator', exact: true })).toHaveCount(
+        0,
+      );
+      await page.getByRole('button', { name: 'Try: Can I send you a photo?', exact: true }).click();
+      expect(sentText).toEqual(['Can I send you a photo?']);
+    }
     await page.getByText('Add a label or error-code photo', { exact: false }).click();
     await page
       .getByLabel('Appliance photo', { exact: true })
@@ -65,6 +74,7 @@ for (const [width, workspace] of [
     expect(connections).toBe(1);
     expect(stopped).toBe(0);
     expect(attempts).toBe(2);
+    expect(sentText).toEqual(workspace ? [] : ['Can I send you a photo?']);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({
       path: `test-results/voice-photo-${width}-${workspace ? 'workspace' : 'presentation'}.png`,

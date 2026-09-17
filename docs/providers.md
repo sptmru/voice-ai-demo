@@ -58,6 +58,14 @@ Proof artifacts are ignored by git in `.cache/live-proofs/`. `live:gemini` check
 
 Unit and integration tests inject provider wire responses and verify both adapters without API charges. Those tests do not prove OpenAI account/model availability or live audio behavior. See [validation](validation.md) for exact implementation-session results.
 
+To check photo sharing with continuous microphone input, run:
+
+```sh
+corepack pnpm exec tsx --env-file=.env scripts/live-voice-photo.ts
+```
+
+This uses real Gemini quota, synthetic spoken questions and `tests/fixtures/workshop-label.png`, without database or business-tool writes. It verifies that the workshop agent accepts photos, reads W100/E21, and answers another spoken question on the same connection while PCM input keeps flowing. Results go to `.cache/live-proofs/voice-photo-continuous.json`; the verified run is in [voice photo evidence](evaluation/voice-photo-continuous-verification.json). Browser upload controls are checked separately by `tests/e2e/voice-photo.spec.ts`. Physical microphone behavior still needs a listening test.
+
 ## Failure handling
 
 - Missing credentials disable the connect button and return a clear server error if called directly.

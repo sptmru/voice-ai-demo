@@ -480,7 +480,10 @@ export function Presentation(props: {
                     ? 'A team member has joined.'
                     : 'Your context is ready for a team member.'}
                 </strong>
-                <p>{handoff.reason}</p>
+                <p>
+                  {handoff.reason} Voice has ended because this conversation was transferred to a person.
+                  Continue in text below.
+                </p>
               </div>
               <button className="button outline" onClick={props.onOpenOperator}>
                 Open operator desk

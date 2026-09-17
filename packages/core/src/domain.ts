@@ -36,7 +36,7 @@ export const scenarios: {
       'What is the repair warranty?',
       'How much does diagnosis cost?',
       'Book a workshop appointment',
-      'Talk to an operator',
+      'Can I send you a photo?',
     ],
   },
   {
@@ -46,7 +46,7 @@ export const scenarios: {
     description: 'Tell us about the appliance and choose an available time.',
     result: 'Google Calendar booking or a local demo appointment',
     prompt: 'I want to book a diagnosis for my Relay Wash W100 washing machine. It will not drain.',
-    quickPrompts: ['Show available times', 'Choose option 1', 'Talk to an operator'],
+    quickPrompts: ['Show available times', 'Choose option 1', 'Can I send you a photo?'],
   },
   {
     id: 'repair-status',
@@ -55,7 +55,7 @@ export const scenarios: {
     description: 'Look up a demo repair and understand the next step.',
     result: 'Verified repair status without an invented completion date',
     prompt: 'Check REP-1042',
-    quickPrompts: ['Check REP-1042', 'What is the repair warranty?', 'Talk to an operator'],
+    quickPrompts: ['Check REP-1042', 'What is the repair warranty?', 'Can I send you a photo?'],
   },
   {
     id: 'appointment-booking',

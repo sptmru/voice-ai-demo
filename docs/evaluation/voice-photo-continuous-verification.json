@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-17T07:15:15.845Z",
+  "model": "gemini-3.1-flash-live-preview",
+  "checks": {
+    "acceptsPhoto": true,
+    "readsModel": true,
+    "readsError": true,
+    "respondsAfterPhoto": true,
+    "audioContinues": true
+  },
+  "turns": [
+    {
+      "role": "user",
+      "text": "Can I send you a photo of my refrigerator to check it out?"
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, you can! Just choose the image, select \"Add a label or error-code photo,\" and then \"Send photo to voice agent.\" I can read labels and model numbers, but I can't make a final diagnosis from a photo. What would you like me to look at?"
+    },
+    {
+      "role": "assistant",
+      "text": "I see the photo you sent. It looks like a washing machine, and the label shows it's a Relay Wash W100, with the model number W100 and an error code E21. Is that correct? Could you tell me more about what's happening?"
+    },
+    {
+      "role": "user",
+      "text": "Can you still hear me after I sent you the photo?"
+    },
+    {
+      "role": "assistant",
+      "text": "Yes, I can hear you clearly! I'm still here to help. Were those details I read back from the photo correct?"
+    }
+  ],
+  "audioBytes": 1680006,
+  "inputFrames": 2206,
+  "completed": 3
+}

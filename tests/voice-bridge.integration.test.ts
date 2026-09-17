@@ -254,6 +254,31 @@ describe.skipIf(!databaseUrl)(
       expect((await upload()).status).toBe(409);
     });
 
+    it('persists the final transcript and provider error when the provider closes immediately', async () => {
+      const session = await start(app, 'repair-advice');
+      const wire = await connected(session);
+      wire.provider.emit({
+        type: 'transcript',
+        role: 'assistant',
+        text: 'I can see the label.',
+        final: true,
+        itemId: 'last-photo-turn',
+      });
+      wire.provider.emit({ type: 'error', message: 'Provider connection closed (code 1011)' });
+      wire.provider.emit({ type: 'state', state: 'closed', provider: 'gemini' });
+      await wire.closed;
+      const events = await repo.getEvents(session.id);
+      expect(events.some((e) => e.type === 'transcript' && e.payload.itemId === 'last-photo-turn')).toBe(
+        true,
+      );
+      expect(
+        events.some(
+          (e) => e.type === 'error' && e.payload.message === 'Provider connection closed (code 1011)',
+        ),
+      ).toBe(true);
+      expect(events.some((e) => e.type === 'voice.state' && e.payload.state === 'closed')).toBe(true);
+    });
+
     it('uses the booking voice instructions and persists an appointment through real business tools', async () => {
       const session = await start(app, 'appointment-booking');
       const wire = await connected(session);
@@ -727,6 +752,7 @@ describe.skipIf(!databaseUrl)(
         );
         expect(app.voiceActive.has(session.id)).toBe(true);
         expect((await end(session)).status).toBe(409);
+        wire.send({ type: 'audio', data: 'AAAA', sampleRate: 16000 });
         let secondStopFinished = false;
         const secondStop = app.bridge.closeSession(session.id).then(() => {
           secondStopFinished = true;
@@ -743,6 +769,7 @@ describe.skipIf(!databaseUrl)(
           'voice drain',
         );
         expect(wire.provider.session.sendToolResult).not.toHaveBeenCalled();
+        expect((await repo.getEvents(session.id)).filter((e) => e.type === 'error')).toHaveLength(0);
         expect((await end(session)).status).toBe(200);
       } finally {
         gate.release();
