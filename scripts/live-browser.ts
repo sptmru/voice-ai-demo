@@ -48,7 +48,7 @@ try {
   console.log('Browser microphone and Gemini connection ready');
   await page
     .locator('.user-turn')
-    .filter({ hasText: /outbound|UK|four|403/i })
+    .filter({ hasText: /washing|W100|E21|drain/i })
     .first()
     .waitFor({ timeout: 90000 });
   console.log('Synthetic microphone speech transcribed by Gemini');

@@ -28,7 +28,7 @@ try {
     },
   });
   await session.sendText(
-    'Say exactly: Hi, our outbound calls to UK numbers started failing this morning with SIP four oh three. Please investigate the cause and open a support ticket.',
+    'Say exactly: My Relay Wash W100 washing machine shows E21 and will not drain. Please help me and open a support ticket.',
   );
   await done;
   const pcm = Buffer.concat([Buffer.alloc(8 * 24000 * 2), ...buffers, Buffer.alloc(40 * 24000 * 2)]);

@@ -1,3 +1,4 @@
+import { imageMime } from '../../core/src/photo.js';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import type { ToolExecutionResult } from '../../core/src/executor.js';
@@ -429,6 +430,26 @@ class OpenAISession implements RealtimeVoiceSession {
   }
   async sendAudio(_base64: string, _sampleRate: number): Promise<void> {
     throw new Error('OpenAI WebRTC audio uses the browser media track, not PCM WebSocket frames');
+  }
+  async sendImage(bytes: Buffer): Promise<void> {
+    this.ensureReady();
+    const mime = imageMime(bytes);
+    this.send({
+      type: 'conversation.item.create',
+      event_id: randomUUID(),
+      item: {
+        type: 'message',
+        role: 'user',
+        content: [
+          { type: 'input_image', image_url: `data:${mime};base64,${bytes.toString('base64')}` },
+          {
+            type: 'input_text',
+            text: 'I have shared an appliance photo. Please look at it and help me with the visible details.',
+          },
+        ],
+      },
+    });
+    this.requestResponse();
   }
   async sendText(text: string): Promise<void> {
     this.ensureReady();

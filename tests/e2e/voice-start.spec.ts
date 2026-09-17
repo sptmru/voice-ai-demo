@@ -33,7 +33,7 @@ test('starting and resetting automatically connect voice to the newly created se
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/sessions') && r.request().method() === 'POST',
   );
@@ -76,14 +76,14 @@ test('denied microphone access preserves the new session and allows text support
   });
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await expect(page.locator('.error-banner')).toContainText('Microphone permission denied');
   await expect(page.getByText('In session', { exact: true })).toBeVisible();
   await expect(page.getByLabel('Message the support agent')).toBeEnabled();
   expect(voiceConnections).toBe(0);
-  await page.getByRole('button', { name: /Try: Our outbound calls/ }).click();
-  await expect(page.locator('.ticket-link')).toContainText('TKT-', { timeout: 60000 });
+  await page.getByRole('button', { name: /Try: My Relay Wash W100/ }).click();
+  await expect(page.locator('.sources .source-card').first()).toBeVisible({ timeout: 60000 });
   await expect(page.getByRole('button', { name: 'Reconnect voice', exact: true })).toBeVisible();
 });
 

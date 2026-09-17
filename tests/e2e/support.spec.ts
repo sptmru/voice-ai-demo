@@ -11,43 +11,40 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test('SIP 403 investigation persists a ticket, evidence and after-call report', async ({ page }) => {
+test('repair advice persists evidence and an after-call report', async ({ page }) => {
   const errors: string[] = [];
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
   await expect(page.getByRole('heading', { name: 'Every conversation. In context.' })).toBeVisible();
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
   await expect(page.getByText('In session', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: /Try: Our outbound calls/ }).click();
+  await page.getByRole('button', { name: /Try: My Relay Wash W100/ }).click();
   await expect(page.getByRole('heading', { name: 'A clear diagnosis. A concrete next step.' })).toBeVisible({
     timeout: 100000,
   });
-  await expect(page.locator('.ticket-link')).toContainText('TKT-');
-  await expect(page.locator('.diagnosis')).toContainText('incident');
-  await expect(page.locator('.sources .source-card')).toHaveCount(4);
+  await expect(page.locator('.sources .source-card').first()).toBeVisible();
   await page.screenshot({ path: 'test-results/m1-desktop.png', fullPage: true });
   await page.getByRole('button', { name: 'End session' }).click();
   await expect(page.getByText('AFTER-CALL REPORT', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Session history', exact: true }).first().click();
   await page.locator('.history-row').first().click();
-  await expect(page.locator('.ticket-link')).toContainText('TKT-');
   expect(errors).toEqual([]);
 });
 
-test('credential reset is an explicit single-use confirmation and mobile layout fits', async ({ page }) => {
+test('repair approval is explicit and mobile layout fits', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
-  await page.getByLabel('Demo scenario').selectOption('invalid-credentials');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
+  await page.getByLabel('Demo scenario').selectOption('repair-status');
   await page.getByRole('button', { name: 'Start session', exact: true }).click();
-  await page.getByLabel('Message the support agent').fill('Please reset trunk credentials');
+  await page.getByLabel('Message the support agent').fill('Please approve repair REP-1042');
   await page.getByRole('button', { name: 'Send message', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Confirm reset' })).toBeVisible();
-  await page.getByRole('button', { name: 'Confirm reset' }).click();
-  await expect(page.getByRole('button', { name: 'Confirm reset' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Confirm quote approval' })).toBeVisible();
+  await page.getByRole('button', { name: 'Confirm quote approval' }).click();
+  await expect(page.getByRole('button', { name: 'Confirm quote approval' })).toHaveCount(0);
   await page.screenshot({ path: 'test-results/m1-mobile.png', fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -55,13 +52,13 @@ test('credential reset is an explicit single-use confirmation and mobile layout 
 test('knowledge search exposes vector and lexical evidence', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
   await page
     .getByRole('button', { name: /Knowledge base/ })
     .first()
     .click();
-  await page.getByLabel('Knowledge domain').selectOption('telecom');
-  await page.getByLabel('Search knowledge').fill('SIP 403 outbound UK carrier rejection');
+  await page.getByLabel('Knowledge domain').selectOption('repair');
+  await page.getByLabel('Search knowledge').fill('workshop diagnosis repair warranty');
   await page.getByRole('button', { name: 'Search knowledge', exact: true }).click();
   await expect(page.locator('.search-results .source-card').first()).toBeVisible({ timeout: 100000 });
   await page.locator('.search-results .source-card summary').first().click();
@@ -71,7 +68,7 @@ test('knowledge search exposes vector and lexical evidence', async ({ page }) =>
 test('uploaded knowledge becomes searchable from the dashboard', async ({ page }) => {
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
   await page
     .getByRole('button', { name: /Knowledge base/ })
     .first()
@@ -80,7 +77,7 @@ test('uploaded knowledge becomes searchable from the dashboard', async ({ page }
     name: 'aurora-routing.md',
     mimeType: 'text/markdown',
     buffer: Buffer.from(
-      '# Aurora test routing\n\nFor the fictional Aurora route, use the diagnostic marker AURORA-7281. This is a document-upload test, and does not authorize changes to any telecom system.',
+      '# Aurora test routing\n\nFor the fictional Aurora route, use the diagnostic marker AURORA-7281. This is a document-upload test, and does not authorize changes to any workshop record.',
     ),
   });
   await page.getByRole('button', { name: 'Upload & index' }).click();
@@ -113,7 +110,7 @@ test('session deletion confirms, reports a failed delete, and clears the selecte
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/');
   await page.getByRole('button', { name: 'Live workspace', exact: true }).click();
-  await page.getByLabel('Demo scenario').selectOption('carrier-incident');
+  await page.getByLabel('Demo scenario').selectOption('repair-advice');
   const created = page.waitForResponse(
     (r) => r.url().endsWith('/api/sessions') && r.request().method() === 'POST',
   );

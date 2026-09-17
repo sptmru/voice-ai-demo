@@ -2,7 +2,7 @@
 
 ## Knowledge corpus
 
-`docs/knowledge/repair/manifest.json` provides metadata for 16 active English documents and an archived warranty. These are fictional workshop policies and fictional Relay appliances, not real manufacturer instructions. The 10 legacy telecom documents remain separate. Prices, jobs and calendar availability come from operational tools; documents describe the policies governing them. Multilingual embeddings support Russian queries against the English corpus.
+`docs/knowledge/repair/manifest.json` provides metadata for 16 active English documents and an archived warranty. These are fictional workshop policies and fictional Relay appliances, not real manufacturer instructions. Prices, jobs and calendar availability come from operational tools; documents describe the policies governing them. Multilingual embeddings support Russian queries against the English corpus.
 
 Metadata fields: `domain`, `version`, `policyKey`, `status`, `effectiveFrom`, `effectiveTo`, `appliance`, `models`. Effective dates are inclusive. `policyKey` groups versions of one policy. Multiple relevant active versions produce `conflict`; the system does not automatically choose the lexicographically greatest version. This detects ambiguous metadata authority, not arbitrary contradictions in natural language.
 

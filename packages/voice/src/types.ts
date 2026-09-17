@@ -34,6 +34,7 @@ export interface RealtimeVoiceSession {
   };
   readonly sdpAnswer?: string;
   sendAudio(base64: string, sampleRate: number): Promise<void>;
+  sendImage(bytes: Buffer): Promise<void>;
   sendText(text: string): Promise<void>;
   sendToolResult(result: ToolExecutionResult): Promise<void>;
   interrupt(): Promise<void>;

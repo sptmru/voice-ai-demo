@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { prepareVoicePhoto } from './voice-photo';
 import {
   CalendarDays,
   Camera,
@@ -257,8 +258,9 @@ export function PhotoIntake(props: {
   const [reviewed, setReviewed] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
-  const [stage, setStage] = useState<'reading' | 'saving' | undefined>();
-  const disabled = props.busy || props.voiceConnected;
+  const [stage, setStage] = useState<'reading' | 'saving' | 'sending' | undefined>();
+  const [sent, setSent] = useState(false);
+  const disabled = props.busy || !!stage;
   useEffect(() => {
     if (extraction || file) return;
     const latest = [...props.events].reverse().find((event) => event.payload.state === 'photo-review');
@@ -282,6 +284,7 @@ export function PhotoIntake(props: {
     return () => URL.revokeObjectURL(url);
   }, [file]);
   function selectFile(value?: File) {
+    setSent(false);
     setError('');
     setExtraction(undefined);
     setReviewed(false);
@@ -295,6 +298,22 @@ export function PhotoIntake(props: {
       return;
     }
     setFile(value);
+  }
+  async function sendToVoice() {
+    if (!file || disabled) return;
+    setStage('sending');
+    setError('');
+    setSent(false);
+    try {
+      const body = new FormData();
+      body.append('image', await prepareVoicePhoto(file), 'appliance.jpg');
+      await props.request(`/sessions/${props.sessionId}/voice/photos`, { method: 'POST', body });
+      setSent(true);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setStage(undefined);
+    }
   }
   async function analyze() {
     if (!file) return;
@@ -348,29 +367,41 @@ export function PhotoIntake(props: {
         <Camera size={16} /> Add a label or error-code photo <ChevronDown size={14} />
       </summary>
       <p>
-        Use a clear photo of the model label or display. Check and edit the extracted details before adding
-        them to the conversation.
+        {props.voiceConnected
+          ? 'Share a photo of your appliance, model label or error display with the agent during your call.'
+          : 'Use a clear photo of the model label or display. Check and edit the extracted details before adding them to the conversation.'}
       </p>
-      {!props.enabled && (
+      {!props.enabled && !props.voiceConnected && (
         <p className="workshop-muted">
           Photo reading is not configured. You can type the model and error code in the conversation.
         </p>
       )}
       {props.voiceConnected && (
-        <p className="workshop-muted">Disconnect voice before reading or confirming a photo.</p>
+        <p className="workshop-muted">
+          Send the photo directly to your voice agent and keep talking. The image is not stored by the app.
+        </p>
       )}
       <input
         aria-label="Appliance photo"
         type="file"
         accept="image/jpeg,image/png,image/webp"
         capture="environment"
-        disabled={disabled || !props.enabled}
+        disabled={disabled || (!props.enabled && !props.voiceConnected)}
         onChange={(event) => selectFile(event.target.files?.[0])}
       />
+      {file && props.voiceConnected && (
+        <button className="button outline" disabled={disabled || sent} onClick={() => void sendToVoice()}>
+          {stage === 'sending' ? <LoaderCircle size={14} className="spin" /> : <Camera size={14} />}
+          {stage === 'sending' ? 'Sending photo…' : sent ? 'Photo sent' : 'Send photo to voice agent'}
+        </button>
+      )}
+      {sent && (
+        <p role="status">Photo sent to your voice agent. You can keep talking or choose another photo.</p>
+      )}
       {preview && (
         <img className="photo-preview" src={preview} alt="Selected appliance label or error display" />
       )}
-      {file && !extraction && (
+      {file && !extraction && !props.voiceConnected && (
         <button className="button outline" disabled={disabled} onClick={() => void analyze()}>
           {stage === 'reading' ? <LoaderCircle size={14} className="spin" /> : <Camera size={14} />}
           {stage === 'reading' ? 'Reading photo…' : 'Read photo'}
@@ -381,7 +412,7 @@ export function PhotoIntake(props: {
           {error}
         </p>
       )}
-      {extraction && (
+      {extraction && !props.voiceConnected && (
         <div className="photo-review">
           <strong>Review extracted details</strong>
           {!preview && (
@@ -487,7 +518,6 @@ export function ConfirmationCards(props: {
           const input = confirmation.input;
           const booking = ['reschedule_appointment', 'cancel_appointment'].includes(confirmation.toolName);
           const quote = confirmation.toolName === 'approve_repair_quote';
-          const reset = confirmation.toolName === 'reset_trunk_credentials';
           const title = quote
             ? 'Approve the repair quote?'
             : confirmation.toolName === 'cancel_appointment'
@@ -511,9 +541,6 @@ export function ConfirmationCards(props: {
                   Approving this quote authorizes the workshop to start the agreed repair. Review the current
                   estimate in the repair card.
                 </p>
-              )}
-              {reset && (
-                <p>This invalidates the current demo trunk credentials. This is a local mock operation.</p>
               )}
               {typeof input.jobId === 'string' && <p>Repair {input.jobId}</p>}
               {quote && typeof input.expectedEstimateAMD === 'number' && (
@@ -540,13 +567,11 @@ export function ConfirmationCards(props: {
                   disabled={props.busy}
                   onClick={() => props.onResolve(confirmation.id, true)}
                 >
-                  {reset
-                    ? 'Confirm reset'
-                    : quote
-                      ? 'Confirm quote approval'
-                      : confirmation.toolName === 'cancel_appointment'
-                        ? 'Confirm cancellation'
-                        : 'Confirm reschedule'}
+                  {quote
+                    ? 'Confirm quote approval'
+                    : confirmation.toolName === 'cancel_appointment'
+                      ? 'Confirm cancellation'
+                      : 'Confirm reschedule'}
                 </button>
               </div>
             </section>

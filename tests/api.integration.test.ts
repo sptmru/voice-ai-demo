@@ -64,7 +64,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     return { response, body: response.status === 204 ? undefined : ((await response.json()) as any) };
   }
 
-  async function start(scenarioId: ScenarioId = 'carrier-incident', cookie?: string) {
+  async function start(scenarioId: ScenarioId = 'repair-advice', cookie?: string) {
     const result = await request('/api/sessions', { body: { scenarioId }, cookie });
     expect(result.response.status).toBe(201);
     return {
@@ -114,6 +114,16 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     };
   }
 
+  it('only advertises supported scenarios and rejects retired scenarios', async () => {
+    const config = await request('/api/config');
+    expect(config.body.scenarios.some((s: any) => s.id === 'repair-advice')).toBe(true);
+    expect(config.body.scenarios.some((s: any) => s.id === 'carrier-incident')).toBe(false);
+    expect(
+      (await request('/api/sessions', { body: { scenarioId: 'carrier-incident' } })).response.status,
+    ).toBe(400);
+    expect(api.runtime.executor.tools.some((tool) => tool.name === 'reset_trunk_credentials')).toBe(false);
+  });
+
   it('binds a session to an HttpOnly owner cookie and blocks cross-owner reads and writes', async () => {
     const alice = await start();
     const bob = await start();
@@ -126,7 +136,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     expect(
       detail.body.memory.some(
         (item: { kind: string; content: string }) =>
-          item.kind === 'fact' && item.content.includes('Europe/London'),
+          item.kind === 'fact' && item.content.includes('Asia/Yerevan'),
       ),
     ).toBe(true);
     expect(
@@ -169,7 +179,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
       body: { reason: 'Please connect a person' },
     });
     expect(transfer.body.handoff).toMatchObject({ status: 'waiting', reason: 'Please connect a person' });
-    expect(transfer.body.handoff.summary).toContain('Acme');
+    expect(transfer.body.handoff.summary).toContain('Workshop customer');
     const same = await request(`${path}/handoff`, {
       cookie: alice.cookie,
       body: { reason: 'Please connect a person' },
@@ -223,7 +233,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
   it('rejects a hostile browser Origin before creating any session', async () => {
     const before = Number((await database.query('SELECT count(*) FROM support_sessions')).rows[0].count);
     const result = await request('/api/sessions', {
-      body: { scenarioId: 'carrier-incident' },
+      body: { scenarioId: 'repair-advice' },
       headers: { Origin: 'https://hostile.example' },
     });
     expect(result.response.status).toBe(403);
@@ -244,7 +254,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
       severity: 'low',
     });
     await repo.createAction(session.id, 'callback', { at: 'later' }, 'delete-fixture');
-    await repo.createConfirmation(session.id, 'reset_trunk_credentials', { reason: 'Local test' });
+    await repo.createConfirmation(session.id, 'approve_repair_quote', { reason: 'Local test' });
     await repo.saveMemory(customerId, 'summary', `Deletion summary ${session.id}`, session.id);
     await repo.saveMemory(customerId, 'case', `Deletion case ${session.id}`, session.id);
     await repo.saveMemory(customerId, 'summary', `Retained summary ${other.id}`, other.id);
@@ -453,26 +463,23 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
       expect(initial.some((event) => event.type === 'customer.identified')).toBe(true);
       const result = await request(`/api/sessions/${session.id}/messages`, {
         cookie: session.cookie,
-        body: { text: 'UK SIP 403 failures. Please investigate and create a ticket.' },
+        body: { text: 'My Relay Wash W100 washing machine will not drain and shows E21. What should I do?' },
       });
       expect(result.response.status).toBe(200);
-      expect(result.body.outcome.diagnosis).toContain('INC-UK-20260915');
-      expect(result.body.outcome.actions).toContain('tool:search_knowledge_base');
-      expect(result.body.outcome.actions).toContain('tool:check_trunk_status');
+      expect(result.body.text).toBeTruthy();
       const events = await live.until((items) =>
         items.some((event) => event.type === 'transcript' && event.payload.role === 'assistant'),
       );
       expect(
-        events.some((event) => event.type === 'tool.completed' && event.payload.name === 'get_recent_calls'),
+        events.some(
+          (event) => event.type === 'tool.completed' && event.payload.name === 'search_knowledge_base',
+        ),
       ).toBe(true);
       const retrieval = events.find((event) => event.type === 'retrieval.completed')!;
       expect((retrieval.payload.chunks as unknown[]).length).toBeGreaterThan(0);
-      expect(events.some((event) => event.type === 'call.outcome')).toBe(true);
       const persisted = await repo.getEvents(session.id);
       expect(events.map((event) => event.id)).toEqual(persisted.map((event) => event.id));
       expect(new Set(events.map((event) => event.id)).size).toBe(events.length);
-      expect((await repo.getTickets(session.id))[0].id).toBe(result.body.outcome.ticketId);
-      expect(result.body.outcome.actions).toContain(`ticket:${result.body.outcome.ticketId}`);
       const cursor = events.at(-4)!.id;
       const replay = await subscribe(session.id, session.cookie, cursor, true);
       try {
@@ -528,17 +535,17 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     }
   });
 
-  it('persists opaque provider call IDs and confirmation-prefixed IDs and rotates credentials once', async () => {
-    const session = await start('invalid-credentials');
-    const other = await start('invalid-credentials', session.cookie);
+  it('persists opaque provider call IDs and confirmation-prefixed IDs and approves the repair once', async () => {
+    const session = await start('repair-status');
+    const other = await start('repair-status', session.cookie);
     const call = {
       id: 'provider-function-call_opaque:1',
-      name: 'reset_trunk_credentials',
-      input: { reason: 'Explicitly requested a local reset' },
+      name: 'approve_repair_quote',
+      input: { jobId: 'REP-1042', expectedRevision: 1, expectedEstimateAMD: 20000 },
     };
     const proposed = await api.runtime.executeTool(session.id, call);
     expect(proposed.status).toBe('pending-confirmation');
-    expect((await repo.getSession(session.id)).snapshot.trunk.credentialVersion).toBe(1);
+    expect((await repo.getRepairJob(session.id, 'REP-1042'))?.status).toBe('awaiting_approval');
     const foreign = await request(`/api/sessions/${other.id}/confirmations/${proposed.confirmationId}`, {
       cookie: session.cookie,
       body: { approve: true },
@@ -551,12 +558,8 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
     });
     expect(approved.response.status).toBe(200);
     expect(approved.body.status).toBe('completed');
-    expect((await repo.getSession(session.id)).snapshot.trunk).toMatchObject({
-      credentialsValid: true,
-      credentialVersion: 2,
-      registered: false,
-    });
-    expect((await repo.getSession(other.id)).snapshot.trunk.credentialVersion).toBe(1);
+    expect((await repo.getRepairJob(session.id, 'REP-1042'))?.status).toBe('in_progress');
+    expect((await repo.getRepairJob(other.id, 'REP-1042'))?.status).toBe('awaiting_approval');
     const persisted = await repo.getEvents(session.id);
     expect(persisted.some((event) => event.correlationId === call.id)).toBe(true);
     expect(
@@ -616,8 +619,8 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
   });
 
   it('rejects expired approval and malformed input with actionable HTTP statuses', async () => {
-    const session = await start('invalid-credentials');
-    const pending = await repo.createConfirmation(session.id, 'reset_trunk_credentials', {
+    const session = await start('repair-status');
+    const pending = await repo.createConfirmation(session.id, 'approve_repair_quote', {
       reason: 'Expired test request',
     });
     await database.query(
@@ -688,7 +691,7 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
       ).response.status,
     ).toBe(409);
     expect((await repo.getEvents(session.id)).length).toBe(before);
-    const ended = await repo.createConfirmation(session.id, 'reset_trunk_credentials', {
+    const ended = await repo.createConfirmation(session.id, 'approve_repair_quote', {
       reason: 'Cannot execute after end',
     });
     expect(
@@ -699,6 +702,6 @@ describe.skipIf(!databaseUrl)('HTTP API with real PostgreSQL, retrieval and SSE'
         })
       ).response.status,
     ).toBe(409);
-    expect((await repo.getSession(session.id)).snapshot.trunk.credentialVersion).toBe(1);
+    expect((await repo.getRepairJob(session.id, 'REP-1042'))?.status).toBe('awaiting_approval');
   });
 });

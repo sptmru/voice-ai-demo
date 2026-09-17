@@ -1,7 +1,7 @@
 import type { RetrievedChunk } from './domain.js';
 
 export interface KnowledgeMetadata {
-  domain: 'repair' | 'telecom' | 'general';
+  domain: 'repair' | 'general';
   version: string;
   policyKey?: string;
   status: 'active' | 'archived';

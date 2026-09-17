@@ -15,7 +15,7 @@ const date = z
   );
 export const knowledgeMetadataSchema = z
   .object({
-    domain: z.enum(['repair', 'telecom', 'general']).default('general'),
+    domain: z.enum(['repair', 'general']).default('general'),
     version: z.string().trim().min(1).max(80).default('1'),
     policyKey: z.string().trim().min(1).max(120).optional(),
     status: z.enum(['active', 'archived']).default('active'),

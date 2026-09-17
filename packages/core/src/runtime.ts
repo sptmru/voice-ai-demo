@@ -3,18 +3,7 @@ import { repairMessage } from './repair-runtime.js';
 import { isRepairScenario } from './repair-tools.js';
 import { businessMessage } from './business-runtime.js';
 import { isBusinessScenario, businessIntent } from './business-tools.js';
-import type {
-  Account,
-  CallOutcome,
-  EmitEvent,
-  Incident,
-  PhoneNumber,
-  Repository,
-  RetrievalService,
-  ScenarioId,
-  TelecomCall,
-  Trunk,
-} from './domain.js';
+import type { CallOutcome, EmitEvent, Repository, RetrievalService, ScenarioId } from './domain.js';
 import { ToolExecutor, newToolCall, sanitize, type ToolCall } from './executor.js';
 
 /** No-key mode: an evidence-driven diagnostic policy, deliberately not an LLM. */
@@ -82,58 +71,7 @@ export class SupportRuntime {
         ? ['complete_support_case']
         : [];
     }
-    const events = await this.repo.getEvents(sessionId);
-    const completed = events.filter((event) => event.type === 'tool.completed');
-    const diagnosticTools = new Set([
-      'get_account',
-      'get_recent_calls',
-      'get_call_details',
-      'check_trunk_status',
-      'check_number_configuration',
-      'get_service_incidents',
-      'create_support_ticket',
-      'escalate_to_engineer',
-    ]);
-    if (!completed.some((event) => diagnosticTools.has(String(event.payload.name)))) return [];
-    const searched = completed.filter((event) => event.payload.name === 'search_knowledge_base').at(-1);
-    const finalized = completed.filter((event) => event.payload.name === 'complete_support_case').at(-1);
-    const callInvestigation = /\b(sip|calls?|calling|trunk|outbound|inbound)\b/i.test(
-      events
-        .filter((event) => event.type === 'transcript' && event.payload.role === 'user')
-        .map((event) => String(event.payload.text))
-        .join(' ') +
-        ' ' +
-        (session.outcome?.issue ?? ''),
-    );
-    const required = callInvestigation
-      ? [
-          'get_customer',
-          'get_account',
-          'get_recent_calls',
-          'get_call_details',
-          'check_trunk_status',
-          'check_number_configuration',
-          'get_service_incidents',
-        ]
-      : [];
-    const missing: string[] = required.filter(
-      (name) => !completed.some((event) => event.payload.name === name),
-    );
-    if (!searched) missing.push('search_knowledge_base');
-    const latestEvidence = completed
-      .filter(
-        (event) =>
-          required.includes(String(event.payload.name)) || event.payload.name === 'search_knowledge_base',
-      )
-      .at(-1);
-    if (
-      missing.length ||
-      !session.outcome ||
-      !finalized ||
-      (latestEvidence && finalized.id < latestEvidence.id)
-    )
-      missing.push('complete_support_case');
-    return missing;
+    return [];
   }
   private async tool<T>(id: string, name: string, input: unknown = {}): Promise<T> {
     const execution = await this.executeTool(id, newToolCall(name, input));
@@ -229,75 +167,7 @@ export class SupportRuntime {
           (name, input = {}) => this.tool(id, name, input),
           (message) => this.say(id, message),
         );
-      const reset = /reset|rotat|сброс/i.test(text) && /credential|password|trunk|парол/i.test(text);
-      if (reset) {
-        await this.tool(id, 'reset_trunk_credentials', { reason: text.slice(0, 4000) });
-        return this.say(
-          id,
-          'I have proposed a simulated trunk credential reset. Review and approve the confirmation card to apply it. A new test call is still required to confirm recovery.',
-        );
-      }
-      if (/^(yes|approve|confirm|да|подтверждаю)[.!\s]*$/i.test(text))
-        return this.say(
-          id,
-          'Sensitive actions require the approval card in this session. A text reply cannot approve them.',
-        );
-      if (/previous|history|last (case|call|session)|истори/i.test(text)) {
-        const memories = (await this.repo.getMemory(session.customerId, text)).slice(0, 5);
-        await this.emit(id)('memory.retrieved', { memories });
-        return this.say(
-          id,
-          memories.length
-            ? `Relevant previous support context: ${memories.map((m) => m.content.slice(0, 500)).join(' ')}`
-            : 'There are no matching previous support cases yet.',
-        );
-      }
-      if (/follow.?up|email (me|us)|send (me|us)|письм/i.test(text) && session.outcome) {
-        const action = await this.tool<{ id: string }>(id, 'send_followup', {
-          message: `${session.outcome.diagnosis} Next step: ${session.outcome.nextAction}`,
-        });
-        return this.say(
-          id,
-          `Follow-up ${action.id} was saved locally for the verified customer email. External delivery is mocked.`,
-        );
-      }
-      if (/callback|call (me|us) back|перезвон/i.test(text)) {
-        const date = text.match(
-          /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:\.\d{3})?(?:Z|[+-]\d{2}:\d{2})/,
-        )?.[0];
-        if (!date)
-          return this.say(
-            id,
-            'Please provide the requested callback time with a timezone, for example 2030-09-16T10:00:00+01:00. The callback is a local demo request.',
-          );
-        const action = await this.tool<{ id: string }>(id, 'schedule_callback', {
-          requestedAt: new Date(date).toISOString(),
-          reason: session.diagnosis ?? text,
-        });
-        return this.say(id, `Callback ${action.id} was saved for ${date}. External dispatch is mocked.`);
-      }
-      if (session.outcome && !/recheck|investigate again|check again|повтор/i.test(text)) {
-        if (/escalat|engineer|инженер/i.test(text)) {
-          const ticket = await this.ensureTicket(id, session.outcome);
-          await this.tool(id, 'escalate_to_engineer', {
-            reason: session.outcome.diagnosis,
-            priority: 'urgent',
-          });
-          return this.say(
-            id,
-            `An engineer escalation was recorded locally for ticket ${ticket.id}. External paging is mocked.`,
-          );
-        }
-        if (/ticket|тикет/i.test(text)) {
-          const ticket = await this.ensureTicket(id, session.outcome);
-          return this.say(id, `Support ticket ${ticket.id} is saved locally. ${session.outcome.nextAction}`);
-        }
-        return this.say(
-          id,
-          `${session.outcome.diagnosis} Next step: ${session.outcome.nextAction} You can request a ticket, follow-up email, callback, engineer escalation or another check.`,
-        );
-      }
-      return await this.diagnose(id, text);
+      return this.say(id, 'This scenario is no longer available. Start a workshop conversation.');
     } catch (error) {
       const message = String(
         sanitize(error instanceof Error ? error.message : 'Unable to complete diagnosis'),
@@ -311,15 +181,6 @@ export class SupportRuntime {
       this.busy.delete(id);
     }
   }
-  private async ensureTicket(id: string, outcome: Pick<CallOutcome, 'issue' | 'diagnosis' | 'severity'>) {
-    const tickets = await this.repo.getTickets(id);
-    if (tickets.length) return tickets[tickets.length - 1];
-    return this.tool<{ id: string }>(id, 'create_support_ticket', {
-      subject: outcome.issue,
-      description: outcome.diagnosis,
-      severity: outcome.severity,
-    });
-  }
   private async refreshOutcome(id: string) {
     const session = await this.repo.getSession(id);
     const outcome = session.outcome;
@@ -332,95 +193,6 @@ export class SupportRuntime {
       // action remains valid; the operator owns the next summary from this point onward.
       if (!(await this.repo.getSession(id)).handoff) throw error;
     }
-  }
-  private async diagnose(id: string, text: string) {
-    await this.emit(id)('support.state', {
-      state: 'investigating',
-      message: 'Checking operational evidence and relevant knowledge.',
-    });
-    await this.tool(id, 'get_customer');
-    const account = await this.tool<Account>(id, 'get_account');
-    const calls = await this.tool<TelecomCall[]>(id, 'get_recent_calls', { limit: 10 });
-    const failures = calls.filter((call) => call.status === 'failed');
-    if (failures[0]) await this.tool(id, 'get_call_details', { callId: failures[0].id });
-    const trunk = await this.tool<Trunk>(id, 'check_trunk_status');
-    const number = await this.tool<PhoneNumber>(id, 'check_number_configuration');
-    const incidents = await this.tool<Incident[]>(id, 'get_service_incidents');
-    const inbound = failures.some((call) => call.direction === 'inbound');
-    const ukFailures = failures.filter((call) => call.direction === 'outbound' && call.to.startsWith('+44'));
-    const query = inbound
-      ? 'UK inbound number routing configuration'
-      : `SIP ${failures[0]?.sipCode ?? 'failure'} UK outbound calls authentication caller ID international restrictions carrier incident`;
-    await this.tool(id, 'search_knowledge_base', { query, limit: 4 });
-    let diagnosis: string;
-    let nextAction: string;
-    let issue: string;
-    let intent: CallOutcome['intent'] = 'technical_support';
-    let escalation = false;
-    if (account.status === 'restricted' || account.balance <= 0) {
-      issue = 'Account restriction blocks calling';
-      intent = 'account_support';
-      diagnosis = `The account is ${account.status} with a balance of ${account.balance.toFixed(2)}. This is consistent with the observed call rejection.`;
-      nextAction = 'Ask billing to restore account eligibility, then place a test call.';
-    } else if (inbound && (!number.enabled || !number.route || number.route !== trunk.id)) {
-      issue = 'Inbound number routing misconfiguration';
-      diagnosis = `The incoming number ${number.number} is ${number.enabled ? 'enabled' : 'disabled'} and its route ${number.route ?? 'is missing'} does not provide a valid path to this trunk.`;
-      nextAction = 'An engineer should correct the number route and verify an inbound test call.';
-      escalation = true;
-    } else if (!trunk.credentialsValid || !trunk.registered) {
-      issue = 'SIP trunk authentication failure';
-      diagnosis = `The trunk is ${trunk.registered ? 'registered' : 'not registered'} and authentication credentials are ${trunk.credentialsValid ? 'valid' : 'invalid'}. Authentication must be restored before carrier troubleshooting.`;
-      nextAction =
-        'Review trunk authentication; request a simulated credential reset with explicit approval if needed, then test a new call.';
-    } else if (!trunk.callerIdVerified) {
-      issue = 'Unverified outbound caller ID';
-      diagnosis = `Outbound caller ID ${trunk.callerId} is not verified. The observed SIP rejection is consistent with caller-ID policy enforcement.`;
-      nextAction = 'Verify or select an authorized caller ID, then repeat an outbound test call.';
-    } else if (ukFailures.length && (!account.internationalEnabled || !account.ukEnabled)) {
-      issue = 'Destination calling restriction';
-      diagnosis = `The account has ${account.internationalEnabled ? 'international calling enabled' : 'international calling disabled'} and ${account.ukEnabled ? 'UK calling enabled' : 'UK calling disabled'}. These restrictions explain rejection of UK destinations.`;
-      nextAction =
-        'An authorized account administrator should enable the required destination permission and test a new call.';
-    } else {
-      const incident = incidents.find(
-        (item) =>
-          /uk|united kingdom/i.test(`${item.region} ${item.title}`) &&
-          !/^resolved|closed$/i.test(item.status),
-      );
-      if (ukFailures.length && incident) {
-        issue = 'UK outbound carrier degradation';
-        diagnosis = `${ukFailures.length} recent UK outbound calls failed (SIP ${[...new Set(ukFailures.map((c) => c.sipCode))].join(', ')}). Account permissions, trunk authentication and caller ID are valid. Active incident ${incident.id}: ${incident.title} (${incident.status}) is the likely cause.`;
-        nextAction = `Monitor incident ${incident.id}; retry a controlled test call after the carrier reports recovery.`;
-      } else {
-        issue = 'Unexplained call failures';
-        diagnosis =
-          'Current account, trunk and number checks do not establish a known cause, and no matching active incident explains these failures. A human engineer needs to inspect signaling traces.';
-        nextAction =
-          'An engineer should review affected call IDs and SIP traces; avoid changing credentials without evidence.';
-        escalation = true;
-      }
-    }
-    const severity: CallOutcome['severity'] = failures.length >= 3 ? 'high' : 'medium';
-    if (/ticket|тикет|escalat|engineer/i.test(text) || escalation)
-      await this.ensureTicket(id, { issue, diagnosis, severity });
-    if (escalation || /escalat/i.test(text))
-      await this.tool(id, 'escalate_to_engineer', {
-        reason: diagnosis,
-        priority: severity === 'high' ? 'urgent' : 'normal',
-      });
-    const outcome = await this.tool<CallOutcome>(id, 'complete_support_case', {
-      intent,
-      severity,
-      product: 'SIP Trunking',
-      issue,
-      diagnosis,
-      resolved: false,
-      nextAction,
-    });
-    await this.emit(id)('support.state', { state: 'diagnosed', message: issue });
-    const reply = `${diagnosis} ${outcome.ticketId ? `Support ticket ${outcome.ticketId} was saved locally. ` : ''}${escalation ? 'An engineer escalation was recorded locally; external paging is mocked. ' : ''}${nextAction}`;
-    await this.say(id, reply);
-    return { text: reply, outcome };
   }
   async endSession(id: string) {
     if (this.busy.has(id)) throw new Error('Wait for the current diagnostic turn to finish');

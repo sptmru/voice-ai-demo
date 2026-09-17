@@ -1,3 +1,4 @@
+import { scenarioIds } from '../../core/src/domain.js';
 import { RepairLifecycle } from './repair-lifecycle.js';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
@@ -121,8 +122,8 @@ export class PostgresRepository implements Repository {
 
   async listSessions(allowedIds?: string[]): Promise<SupportSession[]> {
     const { rows } = await this.database.query(
-      'SELECT * FROM support_sessions WHERE ($1::uuid[] IS NULL OR id=ANY($1::uuid[])) ORDER BY created_at DESC,id LIMIT 100',
-      [allowedIds ?? null],
+      'SELECT * FROM support_sessions WHERE ($1::uuid[] IS NULL OR id=ANY($1::uuid[])) AND scenario_id=ANY($2::text[]) ORDER BY created_at DESC,id LIMIT 100',
+      [allowedIds ?? null, scenarioIds],
     );
     return rows.map(sessionFromRow);
   }
@@ -248,7 +249,6 @@ export class PostgresRepository implements Repository {
     idempotencyKey: string,
   ): Promise<Record<string, unknown>> {
     input = sanitize(input) as typeof input;
-    if (kind === 'credential-reset') return this.resetCredentials(sessionId, input, idempotencyKey);
     const { rows } = await this.database.query(
       `INSERT INTO support_actions(id,session_id,customer_id,kind,input,idempotency_key,status)
       SELECT $1,id,customer_id,$3,$4,$5,$6 FROM support_sessions WHERE id=$2
@@ -272,54 +272,6 @@ export class PostgresRepository implements Repository {
     )
       throw new Error('Idempotency key already used for a different action');
     return actionFromRow(rows[0]);
-  }
-
-  private async resetCredentials(
-    sessionId: string,
-    input: Record<string, unknown>,
-    idempotencyKey: string,
-  ): Promise<Record<string, unknown>> {
-    const client = await this.database.connect();
-    try {
-      await client.query('BEGIN');
-      const { rows: sessions } = await client.query('SELECT * FROM support_sessions WHERE id=$1 FOR UPDATE', [
-        sessionId,
-      ]);
-      if (!sessions[0]) throw new Error('Session not found');
-      const { rows: existing } = await client.query(
-        'SELECT * FROM support_actions WHERE session_id=$1 AND idempotency_key=$2',
-        [sessionId, idempotencyKey],
-      );
-      if (existing[0]) {
-        if (existing[0].kind !== 'credential-reset' || existing[0].input.reason !== input.reason)
-          throw new Error('Idempotency key already used for a different action');
-        await client.query('COMMIT');
-        return actionFromRow(existing[0]);
-      }
-      if (input.mode !== 'simulated')
-        throw new Error('Credential reset only supports simulated local execution');
-      const snapshot = sessions[0].snapshot as SupportSession['snapshot'];
-      snapshot.trunk.credentialVersion += 1;
-      snapshot.trunk.credentialsValid = true;
-      // A credential rotation does not establish SIP registration. Re-registration is a separate PBX step.
-      const savedInput = { ...input, credentialVersion: snapshot.trunk.credentialVersion };
-      const { rows } = await client.query(
-        `INSERT INTO support_actions(id,session_id,customer_id,kind,input,idempotency_key)
-        VALUES($1,$2,$3,'credential-reset',$4,$5) RETURNING *`,
-        [randomUUID(), sessionId, sessions[0].customer_id, JSON.stringify(savedInput), idempotencyKey],
-      );
-      await client.query('UPDATE support_sessions SET snapshot=$2 WHERE id=$1', [
-        sessionId,
-        JSON.stringify(snapshot),
-      ]);
-      await client.query('COMMIT');
-      return actionFromRow(rows[0]);
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
   }
 
   async getActions(sessionId: string): Promise<Record<string, unknown>[]> {
@@ -457,10 +409,11 @@ export class PostgresRepository implements Repository {
         SELECT memory.*,row_number() OVER(PARTITION BY kind
           ORDER BY ts_rank_cd(search_vector,query.topic) DESC,created_at DESC,id) AS kind_rank
         FROM customer_memory memory CROSS JOIN query WHERE customer_id=$1
+          AND (source_session_id IS NULL OR EXISTS (SELECT 1 FROM support_sessions s WHERE s.id=memory.source_session_id AND s.scenario_id=ANY($3::text[])))
           AND (kind IN ('fact','preference') OR numnode(query.topic)=0 OR search_vector @@ query.topic)
       ) SELECT * FROM ranked WHERE kind_rank<=2
       ORDER BY kind_rank,CASE kind WHEN 'case' THEN 0 WHEN 'summary' THEN 1 WHEN 'fact' THEN 2 ELSE 3 END LIMIT 8`,
-      [customerId, topic],
+      [customerId, topic, scenarioIds],
     );
     return rows.map((row) => ({
       id: row.id,

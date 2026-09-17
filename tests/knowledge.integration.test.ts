@@ -174,23 +174,16 @@ describe.skipIf(!databaseUrl)('knowledge upload HTTP integration with real parsi
   });
 
   it('extracts and indexes the actual supplied PDF fixture through multipart HTTP', async () => {
-    const pdf = await readFile(
-      new URL('../docs/voice-ai-support-engineer-codex-prompt.pdf', import.meta.url),
-    );
-    expect(pdf.length).toBeGreaterThan(100_000);
-    const result = await upload(
-      'support-task.pdf',
-      pdf,
-      'application/pdf',
-      'Source support engineer specification',
-    );
+    const pdf = await readFile(new URL('./fixtures/workshop-preparation.pdf', import.meta.url));
+    expect(pdf.length).toBeGreaterThan(1000);
+    const result = await upload('support-task.pdf', pdf, 'application/pdf', 'Workshop preparation PDF');
     expect(result.response.status).toBe(201);
     expect(result.body.document.type).toBe('pdf');
-    expect(result.body.document.chunkCount).toBeGreaterThan(5);
-    const retrieved = await search('zero-cost-first portfolio demo');
+    expect(result.body.document.chunkCount).toBeGreaterThan(0);
+    const retrieved = await search('ZEPHYR-924 workshop preparation');
     expect(
       retrieved.some(
-        (chunk) => chunk.documentId === result.body.document.id && /portfolio/i.test(chunk.content),
+        (chunk) => chunk.documentId === result.body.document.id && /preparation/i.test(chunk.content),
       ),
     ).toBe(true);
     expect(

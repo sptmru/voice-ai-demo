@@ -13,20 +13,7 @@ export const scenarioIds = [
   'appointment-booking',
   'lead-qualification',
   'order-support',
-  'carrier-incident',
-  'caller-id',
-  'international-disabled',
-  'invalid-credentials',
-  'account-balance',
-  'number-routing',
-  'unknown',
 ] as const;
-export const telecomScenarioIds = scenarioIds.filter(
-  (id) => ![...repairScenarioIds, 'appointment-booking', 'lead-qualification', 'order-support'].includes(id),
-) as Exclude<
-  (typeof scenarioIds)[number],
-  (typeof repairScenarioIds)[number] | 'appointment-booking' | 'lead-qualification' | 'order-support'
->[];
 export const scenarioSchema = z.enum(scenarioIds);
 export type ScenarioId = z.infer<typeof scenarioSchema>;
 export const scenarios: {
@@ -106,42 +93,6 @@ export const scenarios: {
       'Talk to a person',
     ],
   },
-  {
-    id: 'carrier-incident',
-    label: 'UK carrier incident',
-    prompt:
-      'Our outbound calls to UK numbers started failing this morning with SIP 403. Can you investigate and open a support ticket?',
-  },
-  {
-    id: 'caller-id',
-    label: 'Caller ID mismatch',
-    prompt: 'Our outbound calls are failing with SIP 403. Please investigate.',
-  },
-  {
-    id: 'international-disabled',
-    label: 'International restrictions',
-    prompt: 'UK outbound calls are rejected. Can you check the account?',
-  },
-  {
-    id: 'invalid-credentials',
-    label: 'Trunk authentication',
-    prompt: 'Our SIP trunk is failing authentication and calls return 403.',
-  },
-  {
-    id: 'account-balance',
-    label: 'Account restriction',
-    prompt: 'We cannot make outbound calls. Please check our service.',
-  },
-  {
-    id: 'number-routing',
-    label: 'Number routing',
-    prompt: 'Incoming calls to our UK number are not reaching our trunk.',
-  },
-  {
-    id: 'unknown',
-    label: 'Needs an engineer',
-    prompt: 'Calls intermittently fail with SIP 503. Please investigate and escalate if needed.',
-  },
 ];
 export interface Customer {
   id: string;
@@ -158,47 +109,6 @@ export interface Account {
   products: string[];
   status: 'active' | 'restricted';
   balance: number;
-  internationalEnabled: boolean;
-  ukEnabled: boolean;
-}
-export interface TelecomCall {
-  id: string;
-  customerId: string;
-  startedAt: string;
-  from: string;
-  to: string;
-  direction: 'inbound' | 'outbound';
-  status: 'completed' | 'failed';
-  sipCode: number;
-  durationSec: number;
-  trunkId: string;
-  carrier: string;
-}
-export interface Trunk {
-  id: string;
-  customerId: string;
-  name: string;
-  registered: boolean;
-  credentialsValid: boolean;
-  callerIdVerified: boolean;
-  callerId: string;
-  region: string;
-  credentialVersion: number;
-}
-export interface PhoneNumber {
-  id: string;
-  customerId: string;
-  number: string;
-  route: string | null;
-  enabled: boolean;
-}
-export interface Incident {
-  id: string;
-  title: string;
-  region: string;
-  status: string;
-  startedAt: string;
-  description: string;
 }
 export type SessionMode = 'rehearsal' | 'live';
 export interface AppointmentRecord {
@@ -304,10 +214,6 @@ export interface Snapshot {
   repair?: RepairState;
   business?: BusinessState;
   account: Account;
-  calls: TelecomCall[];
-  trunk: Trunk;
-  number: PhoneNumber;
-  incidents: Incident[];
 }
 export const outcomeSchema = z.object({
   customer: z.string(),

@@ -67,7 +67,7 @@ async function fixture(
     setupTimeoutMs: options.setupTimeout ?? 1000,
   });
   const promise = provider.connect({
-    instructions: 'Support telecom users with actual tools.',
+    instructions: 'Support workshop customers with actual tools.',
     tools,
     onEvent: (e) => events.push(e),
     sdpOffer: 'v=0\r\ns=Browser\r\n',
@@ -120,7 +120,7 @@ describe('OpenAI GA WebRTC and trusted sideband adapter', () => {
     const session = await f.promise;
     expect(session.sdpAnswer).toContain('v=0');
     expect(session.capabilities.transport).toBe('webrtc-sideband');
-    await expect(session.sendAudio('AAAA', 16000)).rejects.toThrow('browser media track');
+    await expect(session.sendAudio('AAA=', 16000)).rejects.toThrow('browser media track');
     await session.close();
   });
   it('never sends server authorization to an arbitrary Location target', () => {
@@ -169,27 +169,27 @@ describe('OpenAI GA WebRTC and trusted sideband adapter', () => {
     const f = await fixture();
     const session = await f.ready();
     f.socket.server({ type: 'response.function_call_arguments.delta', call_id: 'partial', delta: '{}' });
-    f.socket.server(response('r1', [call('c1', 'get_customer', {}), call('c2', 'get_account', {})]));
-    f.socket.server(response('r1', [call('c1', 'get_customer', {}), call('c2', 'get_account', {})]));
+    f.socket.server(response('r1', [call('c1', 'get_customer', {}), call('c2', 'get_repair_catalog', {})]));
+    f.socket.server(response('r1', [call('c1', 'get_customer', {}), call('c2', 'get_repair_catalog', {})]));
     expect(f.events.filter((e) => e.type === 'toolCall')).toHaveLength(2);
     expect(f.events.filter((e) => e.type === 'turn' && e.phase === 'completed')).toHaveLength(0);
     await session.sendToolResult({
       id: 'c1',
       name: 'get_customer',
       status: 'completed',
-      result: { company: 'Acme Ltd' },
+      result: { company: 'Workshop customer' },
     });
     expect(f.socket.sent.filter((e) => e.type === 'response.create')).toHaveLength(0);
     await session.sendToolResult({
       id: 'c2',
-      name: 'get_account',
+      name: 'get_repair_catalog',
       status: 'completed',
       result: { balance: 245.5 },
     });
     expect(f.socket.sent.filter((e) => e.type === 'response.create')).toHaveLength(1);
     const outputs = f.socket.sent.filter((e) => e.item?.type === 'function_call_output');
     expect(outputs.map((e) => e.item.call_id)).toEqual(['c1', 'c2']);
-    expect(JSON.parse(outputs[0].item.output).result.company).toBe('Acme Ltd');
+    expect(JSON.parse(outputs[0].item.output).result.company).toBe('Workshop customer');
     await expect(
       session.sendToolResult({ id: 'c1', name: 'get_customer', status: 'completed' }),
     ).rejects.toThrow('No matching');
@@ -316,7 +316,7 @@ describe('same support tool script through both provider wire contracts', () => 
         events = [];
         const provider = new GeminiLiveProvider({ apiKey: 'mock-key', socketFactory: () => socket });
         const promise = provider.connect({
-          instructions: 'Support telecom users',
+          instructions: 'Support workshop customers',
           tools,
           onEvent: (e) => events.push(e),
         });
@@ -325,11 +325,11 @@ describe('same support tool script through both provider wire contracts', () => 
         session = await promise;
       }
       const steps = [
-        { id: 'identity', name: 'get_customer', input: {}, result: { company: 'Acme Ltd' } },
-        { id: 'account', name: 'get_account', input: {}, result: { internationalEnabled: true } },
+        { id: 'identity', name: 'get_customer', input: {}, result: { company: 'Workshop customer' } },
+        { id: 'account', name: 'get_repair_catalog', input: {}, result: { currency: 'AMD' } },
         {
           id: 'reset',
-          name: 'reset_trunk_credentials',
+          name: 'approve_repair_quote',
           input: { reason: 'User requested' },
           result: { confirmationId: 'approval-1' },
         },
@@ -370,8 +370,29 @@ describe('same support tool script through both provider wire contracts', () => 
               socket.sent.filter((e) => e.item?.type === 'function_call_output').at(-1)?.item.output,
             );
       expect(last.status).toBe('pending-confirmation');
-      expect(last.name).toBe('reset_trunk_credentials');
+      expect(last.name).toBe('approve_repair_quote');
       await session.close();
     },
   );
+});
+
+it('sends a photo to the active conversation and rejects invalid images without closing voice', async () => {
+  const f = await fixture();
+  const session = await f.ready();
+  const photo = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await session.sendImage(photo);
+  expect(f.socket.sent.at(-2)!.item.content[0]).toEqual({
+    type: 'input_image',
+    image_url: `data:image/png;base64,${photo.toString('base64')}`,
+  });
+  expect(f.socket.sent.at(-1)!.type).toBe('response.create');
+  const before = f.socket.sent.length;
+  await expect(session.sendImage(Buffer.from('<svg>invalid image</svg>'))).rejects.toThrow();
+  await expect(session.sendImage(Buffer.alloc(5 * 1024 * 1024 + 1))).rejects.toThrow('5 MB');
+  expect(f.socket.sent.length).toBe(before);
+  expect(f.socket.readyState).toBe(1);
+  await session.close();
 });

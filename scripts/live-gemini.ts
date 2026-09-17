@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { pool, PostgresRepository } from '../packages/db/src/index.js';
 import { RagService } from '../packages/rag/src/index.js';
 import { SupportRuntime } from '../packages/core/src/runtime.js';
-import { SUPPORT_SYSTEM_PROMPT } from '../packages/core/src/prompt.js';
+import { buildScenarioPrompt } from '../packages/core/src/prompt.js';
 import { GeminiLiveProvider, type RealtimeVoiceSession } from '../packages/voice/src/index.js';
 
 // Explicit opt-in live check. Makes billable/quota-consuming requests with the
@@ -10,7 +10,7 @@ import { GeminiLiveProvider, type RealtimeVoiceSession } from '../packages/voice
 if (!process.env.GEMINI_API_KEY) throw new Error('Set GEMINI_API_KEY in .env');
 const repo = new PostgresRepository(pool);
 const runtime = new SupportRuntime(repo, new RagService(pool));
-const support = await runtime.startSession('carrier-incident');
+const support = await runtime.startSession('repair-advice');
 const startedAt = Date.now();
 let voice: RealtimeVoiceSession | undefined;
 let operations = Promise.resolve();
@@ -31,7 +31,7 @@ try {
     apiKey: process.env.GEMINI_API_KEY,
     model: process.env.GEMINI_MODEL,
   }).connect({
-    instructions: SUPPORT_SYSTEM_PROMPT,
+    instructions: buildScenarioPrompt(support),
     tools: runtime.executor.tools
       .filter((t) => t.permission !== 'human-only')
       .map((t) => ({ name: t.name, description: t.description, jsonSchema: t.jsonSchema })),
@@ -66,7 +66,7 @@ try {
     },
   });
   await voice.sendText(
-    'Hi, our outbound calls to UK numbers started failing this morning with SIP 403. Please investigate using our account, call, trunk, number, knowledge and incident tools, open a support ticket, and save the structured outcome with complete_support_case.',
+    'My Relay Wash W100 washing machine shows E21 and will not drain. Please check workshop knowledge, open a support ticket and record a repair_support outcome without claiming the appliance is repaired.',
   );
   await completed;
   await operations;

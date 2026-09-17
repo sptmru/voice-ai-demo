@@ -52,7 +52,7 @@ export class RagService implements RetrievalService {
   }
   async listDocuments(): Promise<KnowledgeDocument[]> {
     const { rows } = await this.database.query(
-      'SELECT * FROM knowledge_documents ORDER BY created_at DESC, title',
+      "SELECT * FROM knowledge_documents WHERE metadata->>'domain' IN ('repair','general') ORDER BY created_at DESC, title",
     );
     return rows.map(mapDocument);
   }
@@ -159,7 +159,7 @@ export class RagService implements RetrievalService {
     const { rows } = await this.database.query(
       `WITH eligible AS (
       SELECT c.* FROM knowledge_chunks c JOIN knowledge_documents d ON d.id=c.document_id
-      WHERE c.embedding_model=$4 AND d.metadata->>'status'='active'
+      WHERE c.embedding_model=$4 AND d.metadata->>'status'='active' AND d.metadata->>'domain' IN ('repair','general')
         AND ($5::text IS NULL OR d.metadata->>'domain'=$5 OR d.metadata->>'domain'='general')
         AND (d.metadata->>'effectiveFrom' IS NULL OR d.metadata->>'effectiveFrom'<=$6)
         AND (d.metadata->>'effectiveTo' IS NULL OR d.metadata->>'effectiveTo'>=$6)

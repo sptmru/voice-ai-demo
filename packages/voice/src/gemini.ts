@@ -1,3 +1,4 @@
+import { imageMime } from '../../core/src/photo.js';
 import { randomUUID } from 'node:crypto';
 import WebSocket from 'ws';
 import type { ToolExecutionResult } from '../../core/src/executor.js';
@@ -355,6 +356,28 @@ class GeminiSession implements RealtimeVoiceSession {
       this.firstAudioAt = Date.now();
     }
     this.sendRaw({ realtimeInput: { audio: { data: base64, mimeType: 'audio/pcm;rate=16000' } } });
+  }
+  async sendImage(bytes: Buffer): Promise<void> {
+    this.ensureReady();
+    const mimeType = imageMime(bytes);
+    // A still photo and its request are one conversation turn. Separate realtime
+    // video/text streams have no ordering guarantee and can answer before seeing the frame.
+    this.sendRaw({
+      clientContent: {
+        turns: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { data: bytes.toString('base64'), mimeType } },
+              {
+                text: 'I have shared an appliance photo. Please look at it and help me with the visible details.',
+              },
+            ],
+          },
+        ],
+        turnComplete: true,
+      },
+    });
   }
   async sendText(text: string): Promise<void> {
     this.ensureReady();

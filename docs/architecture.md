@@ -9,8 +9,7 @@ The default theme is fictional appliance repair in Yerevan. `repair-runtime.ts` 
 ## Earlier business demo extension (2026-09-16)
 
 The earlier presentation extension added appointment booking, lead qualification and
-fictional order support while retaining the technical workbench and seven telecom
-scenarios. `business-tools.ts` supplies scenario-checked tools;
+fictional order support alongside the technical workbench. `business-tools.ts` supplies scenario-checked tools;
 `business-runtime.ts` provides the explicit no-key multi-turn workflow. Voice uses
 `buildScenarioPrompt` with the same executor and persistence. That earlier extension preceded the repair/RAG changes above.
 
@@ -49,7 +48,7 @@ The no-key text mode is an explicitly labelled deterministic diagnostic policy, 
 
 ## Domain and contracts
 
-Customer/account includes ID, company, contact, plan, balance and products. Scenario snapshot includes account restrictions, trunk registration/authentication, caller ID, number routing, recent calls and incidents. Session owns customer, scenario, status, diagnosis, transcript, outcome, ticket, pending confirmations and event history. Persist tickets, callbacks, follow-ups, escalations and credential-reset audit records locally; external dispatch is mocked and labelled.
+Customer/account includes ID, contact and workshop services. Scenario snapshots contain repair context, diagnosis services and fictional repair jobs. Sessions own transcripts, outcomes, tickets, approvals and event history. Repair jobs and bookings use revision checks and explicit approval for sensitive changes.
 
 `ToolDefinition`: name, description, Zod input schema, JSON schema, permission (`read-only | write | sensitive-write | human-only`) and `execute(input, context)`. Context fixes session/customer, repository, retrieval and event emitter. Executor validates arguments, enforces permissions and idempotency, records sanitized arguments/results and durations. Sensitive actions are proposed first, confirmed via a session-bound UI action, single-use and expiring. The model cannot grant itself permission.
 
@@ -57,14 +56,8 @@ Customer/account includes ID, company, contact, plan, balance and products. Scen
 
 `RealtimeVoiceSession`: sendAudio, sendText, sendToolResult, interrupt, close, typed event subscription; exposes transport/audio capabilities and optional provider-specific resumption. Browser PCM capture/playback is outside domain logic. Provider-specific rates, cancel/truncate and reconnection semantics remain explicit.
 
-## Original telecom slice acceptance (historical)
+## Voice photos
 
-1. Migrate and seed real PostgreSQL/pgvector; index fictional telecom docs with local BGE embeddings.
-2. Browser starts Acme UK SIP-403 session, sends text and receives persisted live SSE events.
-3. Execute customer/account, call, trunk, KB and incident tools; derive carrier diagnosis from evidence, create a real local ticket, persist validated outcome.
-4. Test tool validation/customer scope, workflow evidence and ticket persistence, RAG ranking and SSE; typecheck/build and browser desktop/mobile flow.
-5. Document startup, exact mocked boundaries, later credential-dependent validation and current milestone evidence.
+An owner-authenticated multipart `POST /api/sessions/:id/voice/photos` forwards validated raster bytes to the active voice provider. Gemini uses one `clientContent` turn containing `inlineData` and text, avoiding the unordered realtime video/text streams; OpenAI uses `conversation.item.create` with `input_image` and its response queue. Audio stays connected. The application persists an attachment marker, not image bytes. Instructions require verification of visible model/error details before saving them as repair context.
 
-## Constraints / decisions requiring input
-
-No architectural questions block implementation. User must provide Gemini/OpenAI keys locally for live provider testing. Docker requires sandbox escalation on this host. No production deployment or paid services are required. The presentation, default replies and built-in repair corpus are in English. Multilingual retrieval still accepts Russian questions; legacy telecom scenarios remain available.
+Migration 007 retires built-in obsolete knowledge and strips unused fields from current scenario snapshots. Historical sessions remain stored; only supported scenarios appear in session history. Migrations and seed are explicit deployment steps.

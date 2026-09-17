@@ -1,4 +1,4 @@
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import type { Pool } from 'pg';
@@ -45,20 +45,6 @@ export async function seedOperationalData(database: Pool = pool): Promise<void> 
 }
 
 export async function seedKnowledge(database: Pool = pool): Promise<void> {
-  const rag = new RagService(database);
-  const directory = new URL('../docs/knowledge/', import.meta.url);
-  for (const file of (await readdir(directory)).filter((name) => name.endsWith('.md')).sort()) {
-    const content = await readFile(new URL(file, directory), 'utf8');
-    const title = /^#\s+(.+)$/m.exec(content)?.[1] ?? file;
-    const document = await rag.ingest({
-      title,
-      content,
-      source: `docs/knowledge/${file}`,
-      type: 'markdown',
-      metadata: { domain: 'telecom', status: 'active', version: '1' },
-    });
-    console.log(`Indexed ${document.title}: ${document.chunkCount} chunks`);
-  }
   await seedRepairKnowledge(database);
 }
 
@@ -89,9 +75,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     await migrate();
     await seedOperationalData();
     await seedKnowledge();
-    console.log(
-      `Seed complete: ${scenarioIds.length} isolated scenario templates, repair and telecom knowledge.`,
-    );
+    console.log(`Seed complete: ${scenarioIds.length} isolated scenario templates, repair knowledge.`);
   })()
     .catch((error) => {
       console.error(error);

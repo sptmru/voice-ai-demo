@@ -8,15 +8,8 @@ import { migrate } from '../packages/db/src/migrate.js';
 import { RagService } from '../packages/rag/src/index.js';
 import { seedOperationalData } from '../scripts/seed.js';
 import { SupportRuntime } from '../packages/core/src/runtime.js';
-import { SUPPORT_SYSTEM_PROMPT } from '../packages/core/src/prompt.js';
-import type {
-  Account,
-  CallOutcome,
-  Incident,
-  RetrievedChunk,
-  TelecomCall,
-  Trunk,
-} from '../packages/core/src/domain.js';
+import { buildScenarioPrompt } from '../packages/core/src/prompt.js';
+import type { CallOutcome, RetrievalResult } from '../packages/core/src/domain.js';
 import type { ToolExecutionResult } from '../packages/core/src/executor.js';
 import {
   GeminiLiveProvider,
@@ -66,11 +59,7 @@ describe.skipIf(!databaseUrl)(
       await admin.query(`CREATE SCHEMA ${schema}`);
       await migrate(pool);
       await seedOperationalData(pool);
-      for (const filename of [
-        '02-outbound-troubleshooting.md',
-        '06-uk-calling.md',
-        '09-incident-handling.md',
-      ]) {
+      for (const filename of ['repair/workshop-preparation.md']) {
         const content = await readFile(new URL(`../docs/knowledge/${filename}`, import.meta.url), 'utf8');
         await rag.ingest({
           title: /^#\s+(.+)$/m.exec(content)?.[1] ?? filename,
@@ -89,7 +78,7 @@ describe.skipIf(!databaseUrl)(
     it('runs the identical M1 evidence/tool/outcome sequence through both real adapters and persists equivalent cases', async () => {
       const outcomes: CallOutcome[] = [];
       for (const providerId of ['gemini', 'openai'] as const) {
-        const support = await runtime.startSession('carrier-incident');
+        const support = await runtime.startSession('repair-advice');
         const socket = new UpstreamFixture();
         const events: VoiceEvent[] = [];
         const executionResults = new Map<string, ToolExecutionResult>();
@@ -110,7 +99,7 @@ describe.skipIf(!databaseUrl)(
         };
         const definitions = runtime.executor.tools.filter((tool) => tool.permission !== 'human-only');
         const config = {
-          instructions: SUPPORT_SYSTEM_PROMPT,
+          instructions: buildScenarioPrompt(support),
           tools: definitions,
           onEvent,
           sdpOffer: 'v=0\r\ns=Protocol fixture\r\n',
@@ -178,47 +167,30 @@ describe.skipIf(!databaseUrl)(
         };
         try {
           const customer = await invoke<{ company: string }>('get_customer');
-          const account = await invoke<Account>('get_account');
-          const calls = await invoke<TelecomCall[]>('get_recent_calls', { limit: 10 });
-          const failures = calls.filter((call) => call.status === 'failed' && call.to.startsWith('+44'));
-          expect(failures).toHaveLength(5);
-          expect(failures.every((call) => call.sipCode === 403)).toBe(true);
-          expect((await invoke<TelecomCall>('get_call_details', { callId: failures[0].id })).id).toBe(
-            failures[0].id,
-          );
-          const trunk = await invoke<Trunk>('check_trunk_status');
-          await invoke('check_number_configuration');
-          const incidents = await invoke<Incident[]>('get_service_incidents');
-          const chunks = await invoke<RetrievedChunk[]>('search_knowledge_base', {
-            query: 'SIP 403 UK outbound carrier incident account trunk authentication',
+          await invoke('update_repair_context', {
+            appliance: 'washing-machine',
+            model: 'W100',
+            issue: 'Will not drain',
+          });
+          const evidence = await invoke<RetrievalResult>('search_knowledge_base', {
+            query: 'workshop diagnosis preparation',
             limit: 4,
           });
-          expect(chunks.length).toBeGreaterThan(0);
-          expect(chunks.some((chunk) => chunk.semanticScore > 0 && chunk.combinedScore > 0)).toBe(true);
-          for (const chunk of chunks)
-            expect(
-              (await pool.query('SELECT id FROM knowledge_chunks WHERE id=$1', [chunk.chunkId])).rowCount,
-            ).toBe(1);
-          expect(account).toMatchObject({ status: 'active', internationalEnabled: true, ukEnabled: true });
-          expect(account.balance).toBeGreaterThan(0);
-          expect(trunk).toMatchObject({ registered: true, credentialsValid: true, callerIdVerified: true });
-          const incident = incidents.find((item) => item.id === 'INC-UK-20260915')!;
-          expect(incident.status).toBe('investigating');
-          // The scripted provider decision is derived from returned evidence. Model reasoning is not under test.
-          const diagnosis = `${failures.length} UK outbound calls failed with SIP 403. Account permissions, trunk authentication and caller ID are valid. Active incident ${incident.id}: ${incident.title} is the likely cause.`;
+          expect(evidence.chunks.length).toBeGreaterThan(0);
+          const diagnosis = 'The customer needs workshop diagnosis. Appliance repair is not confirmed.';
           const ticket = await invoke<{ id: string }>('create_support_ticket', {
-            subject: 'UK outbound carrier degradation',
+            subject: 'Appliance will not drain',
             description: diagnosis,
             severity: 'high',
           });
           const outcome = await invoke<CallOutcome>('complete_support_case', {
-            intent: 'technical_support',
+            intent: 'repair_support',
             severity: 'high',
-            product: 'SIP Trunking',
-            issue: 'UK outbound carrier degradation',
+            product: 'Relay Workshop',
+            issue: 'Appliance will not drain',
             diagnosis,
             resolved: false,
-            nextAction: `Monitor ${incident.id} and place a test call after carrier recovery.`,
+            nextAction: 'Arrange workshop diagnosis.',
           });
           expect(outcome.customer).toBe(customer.company);
           expect(outcome.ticketId).toBe(ticket.id);
@@ -227,16 +199,11 @@ describe.skipIf(!databaseUrl)(
           expect((await repo.getSession(support.id)).outcome).toEqual(outcome);
           expect(await repo.getTickets(support.id)).toHaveLength(1);
           expect((await repo.getEvents(support.id)).filter((e) => e.type === 'tool.completed')).toHaveLength(
-            10,
+            5,
           );
           expect(events.filter((e) => e.type === 'toolCall').map((e) => e.name)).toEqual([
             'get_customer',
-            'get_account',
-            'get_recent_calls',
-            'get_call_details',
-            'check_trunk_status',
-            'check_number_configuration',
-            'get_service_incidents',
+            'update_repair_context',
             'search_knowledge_base',
             'create_support_ticket',
             'complete_support_case',

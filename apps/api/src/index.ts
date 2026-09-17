@@ -13,6 +13,7 @@ const server = createServer(app);
 const voice = attachVoiceBridge({ server, pool, repo, ...services });
 services.setConfirmationNotifier(voice.notifyConfirmation);
 services.setVoiceStopper(voice.closeSession);
+services.setVoicePhotoSender(voice.sendPhoto);
 attachKnowledgeUpload(app, rag);
 app.use(errorHandler);
 const port = Number(process.env.PORT || 3101);

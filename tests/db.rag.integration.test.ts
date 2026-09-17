@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -29,29 +30,17 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
     await admin.end();
   });
 
-  it('creates isolated snapshots and keeps deterministic templates unchanged', async () => {
-    const one = await repo.createSession('invalid-credentials');
-    const two = await repo.createSession('invalid-credentials');
-    await repo.createAction(
-      one.id,
-      'credential-reset',
-      { reason: 'Customer approved', mode: 'simulated', credentialVersion: 999 },
-      'reset-one',
-    );
-    expect((await repo.getSession(one.id)).snapshot.trunk).toMatchObject({
-      credentialsValid: true,
-      credentialVersion: 2,
-      registered: false,
-    });
-    expect((await repo.getSession(two.id)).snapshot.trunk).toMatchObject({
-      credentialsValid: false,
-      credentialVersion: 1,
-    });
-    expect((await repo.createSession('invalid-credentials')).snapshot.trunk.credentialsValid).toBe(false);
+  it('creates isolated repair snapshots and keeps deterministic templates unchanged', async () => {
+    const one = await repo.createSession('repair-advice');
+    const two = await repo.createSession('repair-advice');
+    one.snapshot.repair!.model = 'Changed model';
+    await repo.updateSession(one.id, { snapshot: one.snapshot });
+    expect((await repo.getSession(two.id)).snapshot.repair?.model).toBeUndefined();
+    expect((await repo.createSession('repair-advice')).snapshot.repair?.model).toBeUndefined();
   });
 
   it('persists events, replay cursors, tickets and action idempotency across repository instances', async () => {
-    const session = await repo.createSession('carrier-incident');
+    const session = await repo.createSession('repair-advice');
     const first = await repo.appendEvent(session.id, 'support.state', { state: 'checking' });
     const second = await repo.appendEvent(session.id, 'support.state', { state: 'diagnosed' });
     const ticket = await repo.createTicket(session.id, {
@@ -72,8 +61,8 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
   });
 
   it('claims confirmations once, rejects foreign sessions and expires old tokens', async () => {
-    const session = await repo.createSession('invalid-credentials');
-    const other = await repo.createSession('invalid-credentials');
+    const session = await repo.createSession('repair-status');
+    const other = await repo.createSession('repair-status');
     const pending = await repo.createConfirmation(session.id, 'reset_credentials', { reason: 'Rotate' });
     await expect(repo.resolveConfirmation(other.id, pending.id, true)).rejects.toThrow('unavailable');
     const raced = await Promise.allSettled([
@@ -92,25 +81,9 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
     );
   });
 
-  it('stores a reset action and mutates the snapshot atomically and exactly once', async () => {
-    const session = await repo.createSession('invalid-credentials');
-    await Promise.all(
-      Array.from({ length: 5 }, () =>
-        repo.createAction(
-          session.id,
-          'credential-reset',
-          { reason: 'Rotate', mode: 'simulated' },
-          'one-reset',
-        ),
-      ),
-    );
-    expect((await repo.getSession(session.id)).snapshot.trunk.credentialVersion).toBe(2);
-    expect(await repo.getActions(session.id)).toHaveLength(1);
-  });
-
   it('redacts persisted free text, transcripts and memory while preserving opaque correlation IDs', async () => {
     const runtime = new SupportRuntime(repo, rag);
-    const session = await runtime.startSession('invalid-credentials');
+    const session = await runtime.startSession('repair-status');
     const secret = 'password=db-sensitive-sentinel';
     await repo.appendEvent(
       session.id,
@@ -132,17 +105,17 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
     });
     const pending = await runtime.executeTool(session.id, {
       id: 'secret-reset',
-      name: 'reset_trunk_credentials',
-      input: { reason: secret },
+      name: 'approve_repair_quote',
+      input: { jobId: 'REP-1042', expectedRevision: 1, expectedEstimateAMD: 20000 },
     });
     await runtime.confirm(session.id, pending.confirmationId!, true);
     await runtime.executeTool(session.id, {
       id: 'secret-outcome',
       name: 'complete_support_case',
       input: {
-        intent: 'technical_support',
+        intent: 'repair_support',
         severity: 'high',
-        product: 'SIP',
+        product: 'Relay Workshop',
         issue: 'Authentication',
         diagnosis: secret,
         resolved: false,
@@ -170,14 +143,14 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
 
   it('includes late actions in the finalized outcome and produces a partial report when the model omits it', async () => {
     const runtime = new SupportRuntime(repo, rag);
-    const session = await runtime.startSession('invalid-credentials');
+    const session = await runtime.startSession('repair-status');
     await runtime.executeTool(session.id, {
       id: 'early-outcome',
       name: 'complete_support_case',
       input: {
-        intent: 'technical_support',
+        intent: 'repair_support',
         severity: 'high',
-        product: 'SIP',
+        product: 'Relay Workshop',
         issue: 'Authentication',
         diagnosis: 'Credentials are invalid',
         resolved: false,
@@ -186,36 +159,36 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
     });
     const pending = await runtime.executeTool(session.id, {
       id: 'late-reset',
-      name: 'reset_trunk_credentials',
-      input: { reason: 'Rotate' },
+      name: 'approve_repair_quote',
+      input: { jobId: 'REP-1042', expectedRevision: 1, expectedEstimateAMD: 20000 },
     });
     await runtime.confirm(session.id, pending.confirmationId!, true);
     const ended = await runtime.endSession(session.id);
     const actions = await repo.getActions(session.id);
-    expect(ended.outcome?.actions).toContain(`credential-reset:${actions[0].id}`);
-    expect(ended.outcome?.actions).toContain('tool:reset_trunk_credentials');
-    const partial = await runtime.startSession('carrier-incident');
-    await runtime.executeTool(partial.id, { id: 'partial-account', name: 'get_account', input: {} });
+    expect(ended.outcome?.actions).toContain(`repair-quote-approved:${actions[0].id}`);
+    expect(ended.outcome?.actions).toContain('tool:approve_repair_quote');
+    const partial = await runtime.startSession('repair-advice');
+    await runtime.executeTool(partial.id, { id: 'partial-account', name: 'get_customer', input: {} });
     const report = await runtime.endSession(partial.id);
-    expect(report.outcome).toMatchObject({ resolved: false, issue: 'Incomplete support investigation' });
+    expect(report.outcome).toMatchObject({ resolved: false, issue: 'Appliance repair conversation ended' });
     expect(report.outcome?.diagnosis).not.toContain('carrier degradation');
-    expect(report.outcome?.nextAction).toContain('human engineer');
+    expect(report.outcome?.nextAction).toContain('follow up');
   });
 
   it('applies allowed session IDs before the history limit', async () => {
-    const own = await repo.createSession('carrier-incident');
+    const own = await repo.createSession('repair-advice');
     await database.query("UPDATE support_sessions SET created_at=now()-interval '1 day' WHERE id=$1", [
       own.id,
     ]);
     await database.query(`INSERT INTO support_sessions(id,customer_id,scenario_id,snapshot)
-      SELECT gen_random_uuid(),customer_id,id,snapshot FROM scenario_templates CROSS JOIN generate_series(1,101) WHERE id='carrier-incident'`);
+      SELECT gen_random_uuid(),customer_id,id,snapshot FROM scenario_templates CROSS JOIN generate_series(1,101) WHERE id='repair-advice'`);
     expect((await repo.listSessions()).some((session) => session.id === own.id)).toBe(false);
     expect((await repo.listSessions([own.id])).map((session) => session.id)).toEqual([own.id]);
     expect(await repo.listSessions([])).toEqual([]);
   });
 
   it('selectively retrieves relevant case memory and checks customer ownership', async () => {
-    const session = await repo.createSession('carrier-incident');
+    const session = await repo.createSession('repair-advice');
     await repo.saveMemory(session.customerId, 'case', 'UK carrier degradation with SIP 403', session.id);
     await repo.saveMemory(session.customerId, 'case', 'Invoice receipt request', session.id);
     await repo.saveMemory(session.customerId, 'preference', 'Prefers email updates', session.id);
@@ -229,7 +202,7 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
   });
 
   it('matches natural history questions and balances memory kinds without unrelated old cases', async () => {
-    const session = await repo.createSession('carrier-incident');
+    const session = await repo.createSession('repair-advice');
     await repo.saveMemory(
       session.customerId,
       'case',
@@ -267,24 +240,22 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
     ).toBe(true);
   });
 
-  it('produces real normalized 384-dimensional embeddings and ranks carrier documentation', async () => {
-    const vector = await embed('UK calls rejected with SIP 403');
+  it('produces real normalized 384-dimensional embeddings and ranks repair documentation', async () => {
+    const vector = await embed('washing machine repair diagnosis');
     expect(vector).toHaveLength(384);
     expect(Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0))).toBeCloseTo(1, 4);
-    const result = await rag.search('UK outbound SIP 403 carrier degradation', 5);
-    expect(result.some((chunk) => chunk.document === 'UK calling guide and carrier rejection checks')).toBe(
-      true,
-    );
+    const result = await rag.search('diagnosis', 5);
+    expect(result.some((chunk) => chunk.source.startsWith('docs/knowledge/repair/'))).toBe(true);
     expect(result[0].semanticScore).toBeGreaterThan(0);
-    expect(result[0].lexicalScore).toBeGreaterThan(0);
+    expect(result.some((chunk) => chunk.lexicalScore > 0)).toBe(true);
     expect(result[0].combinedScore).toBeGreaterThan(0);
     expect(result.every((chunk) => chunk.chunkId && chunk.section && chunk.source && chunk.type)).toBe(true);
   });
 
   it('idempotently indexes seed sources and makes uploaded facts immediately searchable', async () => {
-    expect(await rag.listDocuments()).toHaveLength(27);
+    expect(await rag.listDocuments()).toHaveLength(17);
     await seedKnowledge(database);
-    expect(await rag.listDocuments()).toHaveLength(27);
+    expect(await rag.listDocuments()).toHaveLength(17);
     const input = {
       title: 'ZEPHYR-924 maintenance',
       content:
@@ -297,5 +268,35 @@ describe.skipIf(!databaseUrl)('PostgreSQL persistence and actual local multiling
     const found = await rag.search('ZEPHYR-924', 3);
     expect(found[0].documentId).toBe(doc.id);
     expect(found[0].content).toContain('14:20 UTC');
+  });
+  it('retires only built-in legacy knowledge, preserves uploads and filters retired domains before migration', async () => {
+    const obsolete = await rag.ingest({
+      title: 'Retired fixture',
+      content: '# Retired fixture\nRETIRE-123 obsolete sample.',
+      source: 'docs/knowledge/01-sip-response-codes.md',
+      type: 'markdown',
+    });
+    const uploaded = await rag.ingest({
+      title: 'Customer document',
+      content: '# Customer document\nKeep the uploaded repair policy.',
+      source: 'upload:retirement-regression',
+      type: 'markdown',
+    });
+    await database.query(
+      "UPDATE knowledge_documents SET metadata=jsonb_set(metadata,'{domain}','\"telecom\"') WHERE id=$1",
+      [obsolete.id],
+    );
+    expect((await rag.listDocuments()).some((doc) => doc.id === obsolete.id)).toBe(false);
+    expect((await rag.search('RETIRE-123', 8)).some((chunk) => chunk.documentId === obsolete.id)).toBe(false);
+    await database.query(
+      await readFile(new URL('../packages/db/migrations/007_workshop_only.sql', import.meta.url), 'utf8'),
+    );
+    expect(
+      (await database.query('SELECT 1 FROM knowledge_documents WHERE id=$1', [obsolete.id])).rowCount,
+    ).toBe(0);
+    expect(
+      (await database.query('SELECT 1 FROM knowledge_chunks WHERE document_id=$1', [obsolete.id])).rowCount,
+    ).toBe(0);
+    expect((await rag.listDocuments()).some((doc) => doc.id === uploaded.id)).toBe(true);
   });
 });

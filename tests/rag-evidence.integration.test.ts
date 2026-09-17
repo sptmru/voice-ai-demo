@@ -47,7 +47,7 @@ describe.skipIf(!databaseUrl)('current, scoped and versioned RAG evidence', () =
   });
   it('updates metadata without leaving obsolete chunks and scopes domain/model before retrieval', async () => {
     await document('active', { status: 'archived' });
-    await document('telecom', { domain: 'telecom' });
+    await document('archived-source', { status: 'archived' });
     await document('different-model', { models: ['Z900'], appliance: 'refrigerator' });
     await document('wanted-model', { models: ['W100'], appliance: 'washing-machine' });
     const result = await rag.retrieve({

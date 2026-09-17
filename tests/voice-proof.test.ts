@@ -6,6 +6,7 @@ function fakeProvider(play: (config: VoiceSessionConfig, session: RealtimeVoiceS
   const session: RealtimeVoiceSession = {
     capabilities: { transport: 'websocket-pcm', resumption: false },
     sendAudio: vi.fn(async () => {}),
+    sendImage: vi.fn(async () => {}),
     sendText: vi.fn(async () => {
       play(config, session);
     }),

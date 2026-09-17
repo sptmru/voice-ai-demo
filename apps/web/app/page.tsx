@@ -738,6 +738,21 @@ export default function Home() {
     />
   ));
 
+  const photoIntake =
+    sessionId && !finished && !handoff && detail?.session.scenarioId.startsWith('repair-') ? (
+      <PhotoIntake
+        key={sessionId}
+        sessionId={sessionId}
+        busy={busy || voiceBusy}
+        enabled={!!readiness?.vision?.configured}
+        voiceConnected={voiceConnected}
+        events={events}
+        request={api}
+        onAction={run}
+        onRefresh={refreshCurrent}
+      />
+    ) : undefined;
+
   const chosenScenario = config?.scenarios.find((s) => s.id === scenario);
 
   return (
@@ -886,21 +901,7 @@ export default function Home() {
                 {repairRecords()}
               </>
             }
-            intake={
-              sessionId && !finished && !handoff && detail?.session.scenarioId.startsWith('repair-') ? (
-                <PhotoIntake
-                  key={sessionId}
-                  sessionId={sessionId}
-                  busy={busy || voiceBusy}
-                  enabled={!!readiness?.vision?.configured}
-                  voiceConnected={voiceConnected}
-                  events={events}
-                  request={api}
-                  onAction={run}
-                  onRefresh={refreshCurrent}
-                />
-              ) : undefined
-            }
+            intake={photoIntake}
             scenarios={config?.scenarios || []}
             scenario={scenario}
             onScenario={setScenario}
@@ -990,7 +991,7 @@ export default function Home() {
                 <div className="caller">
                   <span className="avatar">AC</span>
                   <div>
-                    <strong>{detail?.customer.company || 'Acme Ltd'}</strong>
+                    <strong>{detail?.customer.company || 'Workshop customer'}</strong>
                     <span>{detail?.customer.name || 'Alex Morgan'} · Technical lead</span>
                     <small>{detail?.customer.phone || '+44 20 7946 0321'}</small>
                   </div>
@@ -1158,15 +1159,16 @@ export default function Home() {
                     <button
                       className="starter-prompt"
                       onClick={() =>
-                        void send(chosenScenario?.prompt || 'Please investigate our outbound calls.')
+                        void send(chosenScenario?.prompt || 'Please help with my appliance repair.')
                       }
                       disabled={busy}
                     >
                       <Sparkles size={14} />
-                      <span>Try: {chosenScenario?.prompt || 'Investigate outbound calls'}</span>
+                      <span>Try: {chosenScenario?.prompt || 'Ask about appliance repair'}</span>
                       <ArrowRight size={14} />
                     </button>
                   )}
+                {photoIntake}
                 <form
                   className="composer"
                   onSubmit={(e) => {
@@ -1280,15 +1282,15 @@ export default function Home() {
                   </div>
                   <div className="context-body">
                     <div className="account-title">
-                      <strong>{detail?.customer.company || 'Acme Ltd'}</strong>
-                      <span className="plan">{detail?.session.snapshot.account.plan || 'Business'}</span>
+                      <strong>{detail?.customer.company || 'Workshop customer'}</strong>
+                      <span className="plan">{detail?.session.snapshot.account.plan || 'Workshop'}</span>
                     </div>
                     <p className="account-subtitle">
                       {detail?.session.snapshot.account.id || 'Account loaded when the session starts'}
                     </p>
                     <div className="context-row">
                       <span>Product</span>
-                      <b>SIP Trunking</b>
+                      <b>{detail?.session.snapshot.account.products.join(', ') || 'Relay Workshop'}</b>
                     </div>
                     <div className="context-row">
                       <span>Account status</span>
@@ -1298,22 +1300,6 @@ export default function Home() {
                         }
                       >
                         {detail?.session.snapshot.account.status || '—'}
-                      </b>
-                    </div>
-                    <div className="context-row">
-                      <span>International calling</span>
-                      <b>
-                        {detail
-                          ? detail.session.snapshot.account.internationalEnabled
-                            ? 'Enabled'
-                            : 'Disabled'
-                          : '—'}
-                      </b>
-                    </div>
-                    <div className="context-row">
-                      <span>UK destinations</span>
-                      <b>
-                        {detail ? (detail.session.snapshot.account.ukEnabled ? 'Enabled' : 'Disabled') : '—'}
                       </b>
                     </div>
                   </div>
@@ -1584,7 +1570,6 @@ export default function Home() {
               }}
             >
               <option value="repair">Appliance repair</option>
-              <option value="telecom">Telecom support</option>
               <option value="general">General documents</option>
             </select>
             <form
@@ -1653,7 +1638,6 @@ export default function Home() {
                     onChange={(e) => setUploadDomain(e.target.value)}
                   >
                     <option value="repair">Appliance repair</option>
-                    <option value="telecom">Telecom</option>
                     <option value="general">General documents</option>
                   </select>
                 </label>

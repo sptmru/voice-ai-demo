@@ -1,7 +1,7 @@
+import { z } from 'zod';
 import { describe, expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
 import {
-  telecomScenarioIds,
   type AgentEvent,
   type MemoryItem,
   type PendingConfirmation,
@@ -84,11 +84,6 @@ function fixture() {
       if (prior) return prior;
       const action = { id: randomUUID(), sessionId, kind, input, idempotencyKey };
       actions.push(action);
-      if (kind === 'credential-reset') {
-        const s = await repo.getSession(sessionId);
-        s.snapshot.trunk.credentialsValid = true;
-        s.snapshot.trunk.credentialVersion++;
-      }
       return action;
     }),
     getActions: async (id) => actions.filter((a) => a.sessionId === id),
@@ -142,6 +137,15 @@ function fixture() {
     listDocuments: async () => [],
     deleteDocument: async () => false,
   };
+  const runtime = new SupportRuntime(repo, rag);
+  runtime.executor.tools.push({
+    name: 'test_sensitive_action',
+    description: 'Synthetic approval test',
+    permission: 'sensitive-write',
+    inputSchema: z.object({ reason: z.string() }).strict(),
+    jsonSchema: {},
+    execute: (input, c) => c.repo.createAction(c.session.id, 'test-action', input, c.callId),
+  });
   return {
     repo,
     rag,
@@ -151,19 +155,19 @@ function fixture() {
     confirmations,
     actions,
     memories,
-    runtime: new SupportRuntime(repo, rag),
+    runtime,
   };
 }
 
 describe('provider-independent tool executor', () => {
   it('serializes confirmation with human handoff while unrelated sessions remain available', async () => {
     const { runtime, repo, actions } = fixture();
-    const session = await runtime.startSession('invalid-credentials');
-    const other = await runtime.startSession('carrier-incident');
+    const session = await runtime.startSession('repair-status');
+    const other = await runtime.startSession('repair-advice');
     await runtime.message(session.id, 'Investigate failing calls');
     const pending = await runtime.executeTool(session.id, {
       id: randomUUID(),
-      name: 'reset_trunk_credentials',
+      name: 'test_sensitive_action',
       input: { reason: 'Customer approved rotation' },
     });
     let release!: () => void;
@@ -195,23 +199,23 @@ describe('provider-independent tool executor', () => {
     release();
     expect((await confirmed).status).toBe('completed');
     expect((await transfer).status).toBe('completed');
-    expect(actions.filter((action) => action.kind === 'credential-reset')).toHaveLength(1);
+    expect(actions.filter((action) => action.kind === 'test-action')).toHaveLength(1);
     expect((await repo.getSession(session.id)).handoff?.status).toBe('waiting');
     expect(
       (
         await runtime.executeTool(session.id, {
           id: randomUUID(),
-          name: 'reset_trunk_credentials',
+          name: 'test_sensitive_action',
           input: { reason: 'Try again' },
         })
       ).status,
     ).toBe('failed');
-    expect(actions.filter((action) => action.kind === 'credential-reset')).toHaveLength(1);
+    expect(actions.filter((action) => action.kind === 'test-action')).toHaveLength(1);
   });
 
   it('recovers its session queue after a rejected confirmation', async () => {
     const { runtime } = fixture();
-    const session = await runtime.startSession('carrier-incident');
+    const session = await runtime.startSession('repair-advice');
     await expect(runtime.confirm(session.id, 'missing-confirmation', true)).rejects.toThrow(
       'Confirmation not found',
     );
@@ -220,7 +224,7 @@ describe('provider-independent tool executor', () => {
     ).toBe('completed');
   });
 
-  it('has all 12 PDF tools, provider-neutral JSON schemas and a human-only boundary', () => {
+  it('has workshop tools, provider-neutral JSON schemas and approval boundaries', () => {
     const tools = createTools();
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
@@ -233,16 +237,16 @@ describe('provider-independent tool executor', () => {
       ]),
     );
     for (const tool of tools) expect(tool.jsonSchema.type).toBe('object');
-    expect(tools.find((t) => t.name === 'adjust_account_balance')?.permission).toBe('human-only');
+    expect(tools.find((t) => t.name === 'approve_repair_quote')?.permission).toBe('sensitive-write');
   });
   it('rejects injected identity, invalid limits, foreign calls, and model self-approval', async () => {
     const { runtime } = fixture();
-    const session = await runtime.startSession('carrier-incident');
+    const session = await runtime.startSession('repair-advice');
     for (const [name, input] of [
       ['get_customer', { customerId: 'another' }],
       ['get_recent_calls', { limit: 100 }],
       ['get_call_details', { callId: 'foreign' }],
-      ['reset_trunk_credentials', { reason: 'reset', approved: true }],
+      ['test_sensitive_action', { reason: 'reset', approved: true }],
       ['adjust_account_balance', { reason: 'credit' }],
     ] as const) {
       const result = await runtime.executeTool(session.id, { id: randomUUID(), name, input });
@@ -251,7 +255,7 @@ describe('provider-independent tool executor', () => {
   });
   it('replays a ticket request safely across executor instances and refuses changed arguments', async () => {
     const { runtime, repo, rag } = fixture();
-    const session = await runtime.startSession('carrier-incident');
+    const session = await runtime.startSession('repair-advice');
     const call = {
       id: 'same-call',
       name: 'create_support_ticket',
@@ -272,11 +276,11 @@ describe('provider-independent tool executor', () => {
   });
   it('approval is customer-session-bound, single-use and required before a mutation', async () => {
     const { runtime, repo } = fixture();
-    const session = await runtime.startSession('invalid-credentials');
-    const other = await runtime.startSession('invalid-credentials');
+    const session = await runtime.startSession('repair-status');
+    const other = await runtime.startSession('repair-status');
     const result = await runtime.executeTool(session.id, {
       id: 'reset',
-      name: 'reset_trunk_credentials',
+      name: 'test_sensitive_action',
       input: { reason: 'Invalid auth verified' },
     });
     expect(result.status).toBe('pending-confirmation');
@@ -290,16 +294,16 @@ describe('provider-independent tool executor', () => {
   });
   it('rejected and expired approvals cannot execute, including simultaneous confirmation', async () => {
     const { runtime, repo, confirmations } = fixture();
-    const session = await runtime.startSession('invalid-credentials');
+    const session = await runtime.startSession('repair-status');
     const first = await runtime.executeTool(session.id, {
       id: 'reset-1',
-      name: 'reset_trunk_credentials',
+      name: 'test_sensitive_action',
       input: { reason: 'Invalid auth' },
     });
     await runtime.confirm(session.id, first.confirmationId!, false);
     const second = await runtime.executeTool(session.id, {
       id: 'reset-2',
-      name: 'reset_trunk_credentials',
+      name: 'test_sensitive_action',
       input: { reason: 'Invalid auth' },
     });
     confirmations[1].expiresAt = new Date(0).toISOString();
@@ -307,7 +311,7 @@ describe('provider-independent tool executor', () => {
     expect(repo.createAction).not.toHaveBeenCalled();
     const third = await runtime.executeTool(session.id, {
       id: 'reset-3',
-      name: 'reset_trunk_credentials',
+      name: 'test_sensitive_action',
       input: { reason: 'Invalid auth' },
     });
     const results = await Promise.allSettled([
@@ -334,7 +338,7 @@ describe('provider-independent tool executor', () => {
   });
   it('redacts validated free text before tickets, pending approvals, mutations and outcomes are stored', async () => {
     const { runtime, tickets, confirmations, actions, sessions, events, memories } = fixture();
-    const session = await runtime.startSession('invalid-credentials');
+    const session = await runtime.startSession('repair-status');
     const secret = 'password=unit-sensitive-sentinel';
     await runtime.executeTool(session.id, {
       id: 'ticket-redaction',
@@ -348,7 +352,7 @@ describe('provider-independent tool executor', () => {
     });
     const reset = await runtime.executeTool(session.id, {
       id: 'sk-provider-id-1234567890',
-      name: 'reset_trunk_credentials',
+      name: 'test_sensitive_action',
       input: { reason: secret },
     });
     expect(JSON.stringify(confirmations)).not.toContain('unit-sensitive-sentinel');
@@ -357,9 +361,9 @@ describe('provider-independent tool executor', () => {
       id: 'outcome-redaction',
       name: 'complete_support_case',
       input: {
-        intent: 'technical_support',
+        intent: 'repair_support',
         severity: 'high',
-        product: 'SIP',
+        product: 'Relay Workshop',
         issue: 'Authentication',
         diagnosis: secret,
         resolved: false,
@@ -376,7 +380,7 @@ describe('provider-independent tool executor', () => {
   });
   it('does not allow fabricated customer, ticket or action references in outcome tool input', async () => {
     const { runtime } = fixture();
-    const session = await runtime.startSession('unknown');
+    const session = await runtime.startSession('repair-advice');
     const result = await runtime.executeTool(session.id, {
       id: 'outcome',
       name: 'complete_support_case',
@@ -384,27 +388,27 @@ describe('provider-independent tool executor', () => {
         customer: 'Other customer',
         ticketId: 'FAKE',
         actions: ['made up'],
-        intent: 'technical_support',
+        intent: 'repair_support',
         severity: 'high',
-        product: 'SIP',
+        product: 'Relay Workshop',
         issue: 'failure',
-        diagnosis: 'unknown',
+        diagnosis: 'repair-advice',
         resolved: false,
         nextAction: 'escalate',
       },
     });
     expect(result.status).toBe('failed');
   });
-  it('does not let the model claim recovery when the most recent call failed', async () => {
+  it('does not let the model claim resolution without a confirmed booking', async () => {
     const { runtime } = fixture();
-    const session = await runtime.startSession('carrier-incident');
+    const session = await runtime.startSession('repair-advice');
     const result = await runtime.executeTool(session.id, {
       id: 'false-recovery',
       name: 'complete_support_case',
       input: {
-        intent: 'technical_support',
+        intent: 'repair_support',
         severity: 'high',
-        product: 'SIP',
+        product: 'Relay Workshop',
         issue: 'failure',
         diagnosis: 'It should work',
         resolved: true,
@@ -412,163 +416,6 @@ describe('provider-independent tool executor', () => {
       },
     });
     expect(result.status).toBe('failed');
-    expect(result.error).toContain('successful latest test call');
-  });
-});
-
-describe('deterministic evidence-driven runtime', () => {
-  it.each(telecomScenarioIds)(
-    'diagnoses %s using operational tools and persists a validated outcome',
-    async (scenario) => {
-      const { runtime, repo, rag, events } = fixture();
-      const session = await runtime.startSession(scenario);
-      const response = await runtime.message(session.id, 'Please investigate and create a support ticket.');
-      const expected = {
-        'carrier-incident': 'carrier degradation',
-        'caller-id': 'caller ID',
-        'international-disabled': 'calling restriction',
-        'invalid-credentials': 'authentication',
-        'account-balance': 'Account restriction',
-        'number-routing': 'routing',
-        unknown: 'Unexplained',
-      };
-      expect(response.outcome?.issue).toContain(expected[scenario]);
-      expect(response.outcome?.resolved).toBe(false);
-      expect(response.outcome?.ticketId).toBe('SUP-1');
-      expect(rag.search).toHaveBeenCalledOnce();
-      expect(await repo.getTickets(session.id)).toHaveLength(1);
-      expect(events.filter((e) => e.type === 'tool.completed')).toHaveLength(
-        scenario === 'unknown' || scenario === 'number-routing' ? 11 : 10,
-      );
-      expect(events.some((e) => e.type === 'retrieval.completed' && Array.isArray(e.payload.chunks))).toBe(
-        true,
-      );
-      expect((await repo.getSession(session.id)).status).toBe('active');
-    },
-  );
-  it('branches on returned evidence rather than scenario id', async () => {
-    const { runtime, repo } = fixture();
-    const session = await runtime.startSession('carrier-incident');
-    session.snapshot.account.internationalEnabled = false;
-    await repo.updateSession(session.id, { snapshot: session.snapshot });
-    const response = await runtime.message(session.id, 'Investigate');
-    expect(response.outcome?.issue).toBe('Destination calling restriction');
-  });
-  it('follow-up turns reuse diagnosis, keep one ticket and save selective memory only on end', async () => {
-    const { runtime, repo, rag, memories, actions } = fixture();
-    const session = await runtime.startSession('carrier-incident');
-    await runtime.message(session.id, 'Investigate and open a ticket');
-    await runtime.message(session.id, 'What is my ticket?');
-    await runtime.message(session.id, 'Send a follow-up email');
-    expect(actions[0].kind).toBe('followup');
-    expect(rag.search).toHaveBeenCalledOnce();
-    expect(await repo.getTickets(session.id)).toHaveLength(1);
-    expect(memories).toHaveLength(0);
-    const ended = await runtime.endSession(session.id);
-    expect(ended.status).toBe('completed');
-    expect(memories.map((m) => m.kind)).toEqual(['summary', 'case']);
-    await runtime.endSession(session.id);
-    expect(memories).toHaveLength(2);
-  });
-  it('refreshes an existing outcome after voice tools, approval and finalization', async () => {
-    const { runtime, repo } = fixture();
-    const session = await runtime.startSession('invalid-credentials');
-    await runtime.message(session.id, 'Investigate');
-    const ticket = await runtime.executeTool(session.id, {
-      id: 'later-ticket',
-      name: 'create_support_ticket',
-      input: { subject: 'Follow-up investigation', description: 'Needs review', severity: 'high' },
-    });
-    const followup = await runtime.executeTool(session.id, {
-      id: 'later-followup',
-      name: 'send_followup',
-      input: { message: 'We will review the evidence' },
-    });
-    expect((await repo.getSession(session.id)).outcome?.ticketId).toBe((ticket.result as Ticket).id);
-    expect((await repo.getSession(session.id)).outcome?.actions).toContain(
-      `followup:${(followup.result as { id: string }).id}`,
-    );
-    const reset = await runtime.executeTool(session.id, {
-      id: 'later-reset',
-      name: 'reset_trunk_credentials',
-      input: { reason: 'Confirmed authentication failure' },
-    });
-    const approved = await runtime.confirm(session.id, reset.confirmationId!, true);
-    expect((await repo.getSession(session.id)).outcome?.actions).toContain(
-      `credential-reset:${(approved.result as { id: string }).id}`,
-    );
-    const ended = await runtime.endSession(session.id);
-    expect(ended.outcome?.actions).toContain('tool:reset_trunk_credentials');
-    expect(ended.outcome?.resolved).toBe(false);
-  });
-  it('reports missing voice workflow tools and finalizes a partial investigation without inventing a cause', async () => {
-    const { runtime, repo, memories } = fixture();
-    const session = await runtime.startSession('carrier-incident');
-    expect(await runtime.ensureVoiceOutcome(session.id)).toEqual([]);
-    await runtime.executeTool(session.id, { id: 'voice-account', name: 'get_account', input: {} });
-    expect(await runtime.ensureVoiceOutcome(session.id)).toEqual([
-      'search_knowledge_base',
-      'complete_support_case',
-    ]);
-    await runtime.executeTool(session.id, {
-      id: 'voice-search',
-      name: 'search_knowledge_base',
-      input: { query: 'SIP 403 UK' },
-    });
-    expect(await runtime.ensureVoiceOutcome(session.id)).toEqual(['complete_support_case']);
-    const ticket = await runtime.executeTool(session.id, {
-      id: 'voice-ticket',
-      name: 'create_support_ticket',
-      input: {
-        subject: 'Calls need investigation',
-        description: 'Unfinished diagnosis',
-        severity: 'critical',
-      },
-    });
-    const ended = await runtime.endSession(session.id);
-    expect(ended.outcome).toMatchObject({
-      resolved: false,
-      severity: 'critical',
-      ticketId: (ticket.result as Ticket).id,
-    });
-    expect(ended.outcome?.diagnosis).toContain('before a validated diagnosis');
-    expect(ended.outcome?.diagnosis).not.toContain('carrier degradation');
-    expect(ended.outcome?.nextAction).toContain('human engineer');
-    expect(ended.outcome?.actions).toContain('tool:get_account');
-    expect(memories.map((memory) => memory.kind)).toEqual(['summary', 'case']);
-    expect(await runtime.ensureVoiceOutcome(session.id)).toEqual([]);
-    expect((await repo.getSession(session.id)).status).toBe('completed');
-  });
-  it('finalizes an untouched session as incomplete and remains idempotent', async () => {
-    const { runtime, memories, events } = fixture();
-    const session = await runtime.startSession('carrier-incident');
-    const ended = await runtime.endSession(session.id);
-    expect(ended.outcome).toMatchObject({
-      issue: 'Incomplete support investigation',
-      severity: 'low',
-      resolved: false,
-      ticketId: null,
-    });
-    expect(ended.outcome?.diagnosis).toContain('No completed diagnostic checks');
-    const count = events.length;
-    await runtime.endSession(session.id);
-    expect(events).toHaveLength(count);
-    expect(memories).toHaveLength(2);
-  });
-  it('requires call evidence before a voice call-failure investigation is considered complete', async () => {
-    const { runtime, repo } = fixture();
-    const session = await runtime.startSession('carrier-incident');
-    await repo.appendEvent(session.id, 'transcript', {
-      role: 'user',
-      text: 'UK outbound calls fail with SIP 403',
-    });
-    await runtime.executeTool(session.id, { id: 'incident-only', name: 'get_service_incidents', input: {} });
-    const missing = await runtime.ensureVoiceOutcome(session.id);
-    expect(missing).toContain('get_recent_calls');
-    expect(missing).toContain('get_call_details');
-    expect(missing).toContain('check_number_configuration');
-    expect(missing).toContain('search_knowledge_base');
-    expect(missing.at(-1)).toBe('complete_support_case');
-    expect(missing).not.toContain('get_service_incidents');
+    expect(result.error).toContain('resolved');
   });
 });

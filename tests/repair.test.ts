@@ -85,11 +85,6 @@ function fixture() {
       if (prior) return prior;
       const action = { id: randomUUID(), sessionId, kind, input, idempotencyKey };
       actions.push(action);
-      if (kind === 'credential-reset') {
-        const s = await repo.getSession(sessionId);
-        s.snapshot.trunk.credentialsValid = true;
-        s.snapshot.trunk.credentialVersion++;
-      }
       return action;
     }),
     getActions: async (id) => actions.filter((a) => a.sessionId === id),

@@ -52,6 +52,7 @@ class FakeProvider implements RealtimeVoiceProvider {
       resumption: false,
     },
     sendAudio: vi.fn(async () => {}),
+    sendImage: vi.fn(async () => {}),
     sendText: vi.fn(async () => {}),
     sendToolResult: vi.fn(async () => {}),
     interrupt: vi.fn(async () => {
@@ -119,6 +120,7 @@ describe.skipIf(!databaseUrl)(
           : {}),
       });
       services.setVoiceStopper(bridge.closeSession);
+      services.setVoicePhotoSender(bridge.sendPhoto);
       await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
       const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
       return { server, bridge, base, ...services };
@@ -152,7 +154,7 @@ describe.skipIf(!databaseUrl)(
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
       await admin.end();
     });
-    async function start(target = app, scenarioId: ScenarioId = 'carrier-incident') {
+    async function start(target = app, scenarioId: ScenarioId = 'appointment-booking') {
       const response = await fetch(`${target.base}/api/sessions`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -211,6 +213,46 @@ describe.skipIf(!databaseUrl)(
         body: '{}',
       });
     }
+
+    it('sends owner photos during voice, keeps audio flowing, and rejects invalid or disconnected uploads', async () => {
+      const session = await start(app, 'repair-advice');
+      const foreign = await start();
+      const photo = Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',
+        'base64',
+      );
+      const upload = async (bytes = photo, cookie = session.cookie) => {
+        const body = new FormData();
+        body.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/png' }), 'label.png');
+        return fetch(`${app.base}/api/sessions/${session.id}/voice/photos`, {
+          method: 'POST',
+          headers: { Cookie: cookie },
+          body,
+        });
+      };
+      expect((await upload()).status).toBe(409);
+      const wire = await connected(session);
+      try {
+        expect((await upload(photo, foreign.cookie)).status).toBe(404);
+        expect((await upload(Buffer.from('<svg>not a raster image</svg>'))).status).toBe(400);
+        expect((await upload(Buffer.alloc(5 * 1024 * 1024 + 1))).status).toBe(413);
+        expect(wire.provider.session.sendImage).not.toHaveBeenCalled();
+        expect((await upload()).status).toBe(201);
+        expect(wire.provider.session.sendImage).toHaveBeenCalledWith(photo);
+        wire.send({ type: 'audio', data: 'AAAA', sampleRate: 16000 });
+        await eventually(
+          () => vi.mocked(wire.provider.session.sendAudio).mock.calls.length,
+          (n) => n === 1,
+        );
+        const events = await repo.getEvents(session.id);
+        expect(events.some((e) => e.type === 'transcript' && e.payload.mode === 'voice-photo')).toBe(true);
+        expect(JSON.stringify(events)).not.toContain(photo.toString('base64'));
+        expect(app.voiceActive.has(session.id)).toBe(true);
+      } finally {
+        await wire.stop();
+      }
+      expect((await upload()).status).toBe(409);
+    });
 
     it('uses the booking voice instructions and persists an appointment through real business tools', async () => {
       const session = await start(app, 'appointment-booking');
@@ -723,7 +765,7 @@ describe.skipIf(!databaseUrl)(
     });
 
     it('requests missing knowledge/outcome tools after investigation and caps workflow reminders at two', async () => {
-      const session = await start();
+      const session = await start(app, 'lead-qualification');
       const wire = await connected(session);
       try {
         wire.provider.emit({ type: 'turn', phase: 'completed' });
@@ -741,8 +783,8 @@ describe.skipIf(!databaseUrl)(
         wire.provider.emit({
           type: 'toolCall',
           id: 'investigated-calls',
-          name: 'get_recent_calls',
-          input: { limit: 5 },
+          name: 'save_lead',
+          input: { need: 'Appliance repair', budget: 'undecided', timeline: 'next week' },
         });
         await eventually(
           () => vi.mocked(wire.provider.session.sendToolResult).mock.calls,
@@ -762,7 +804,6 @@ describe.skipIf(!databaseUrl)(
           .mock.calls.filter((args) => args[0].includes('Application workflow check'));
         expect(reminders).toHaveLength(2);
         for (const [text] of reminders) {
-          expect(text).toContain('search_knowledge_base');
           expect(text).toContain('complete_support_case');
         }
         expect(

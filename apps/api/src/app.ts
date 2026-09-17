@@ -43,6 +43,7 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
   const active = new Set<string>();
   const voiceActive = new Set<string>();
   let confirmationNotifier: ((id: string, result: unknown) => Promise<void>) | undefined;
+  let voicePhotoSender: ((id: string, bytes: Buffer) => Promise<void>) | undefined;
   let voiceStopper: ((id: string) => Promise<void>) | undefined;
   app.disable('x-powered-by');
   app.use(
@@ -176,7 +177,19 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
       active.delete(id);
     }
   };
-  attachWorkshop(app, { repo, runtime, owned, lock, emit: stream.emitForSession, voiceActive });
+  attachWorkshop(app, {
+    repo,
+    runtime,
+    owned,
+    lock,
+    emit: stream.emitForSession,
+    voiceActive,
+    sendVoicePhoto: async (id, bytes) => {
+      if (!voicePhotoSender)
+        throw Object.assign(new Error('Voice connection is unavailable.'), { status: 409 });
+      await voicePhotoSender(id, bytes);
+    },
+  });
   app.get('/api/sessions', async (req, res) => {
     const own = await pool.query<{ session_id: string }>(
       'SELECT session_id FROM api_session_owners WHERE owner_hash=$1',
@@ -423,7 +436,7 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     const { query, domain, context } = z
       .object({
         query: z.string().trim().min(1).max(1000),
-        domain: z.enum(['repair', 'telecom', 'general']).optional(),
+        domain: z.enum(['repair', 'general']).optional(),
         context: z
           .object({
             appliance: z.string().trim().min(1).max(80).optional(),
@@ -481,6 +494,9 @@ export function createApp(repo: Repository, rag: RetrievalService, pool: Pool) {
     isSessionBusy: (id: string) => active.has(id),
     setConfirmationNotifier: (notifier: typeof confirmationNotifier) => {
       confirmationNotifier = notifier;
+    },
+    setVoicePhotoSender: (sender: typeof voicePhotoSender) => {
+      voicePhotoSender = sender;
     },
     setVoiceStopper: (stopper: typeof voiceStopper) => {
       voiceStopper = stopper;

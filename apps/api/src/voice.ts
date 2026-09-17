@@ -320,6 +320,27 @@ export function attachVoiceBridge({
     });
   }
   return {
+    sendPhoto: async (sessionId: string, bytes: Buffer) => {
+      const provider = providers.get(sessionId);
+      const session = await repo.getSession(sessionId);
+      if (
+        !provider ||
+        providers.get(sessionId) !== provider ||
+        !voiceActive.has(sessionId) ||
+        session.status !== 'active' ||
+        session.handoff
+      )
+        throw Object.assign(new Error('Voice connection is not ready. Reconnect and send the photo again.'), {
+          status: 409,
+        });
+      await provider.sendImage(bytes);
+      await stream.emitForSession(sessionId)('transcript', {
+        role: 'user',
+        text: 'Shared an appliance photo with the voice agent.',
+        final: true,
+        mode: 'voice-photo',
+      });
+    },
     closeSession: async (sessionId: string) => {
       await closers.get(sessionId)?.();
     },

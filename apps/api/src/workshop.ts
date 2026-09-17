@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { Repository, EmitEvent } from '../../../packages/core/src/domain.js';
 import type { SupportRuntime } from '../../../packages/core/src/runtime.js';
 import { newToolCall } from '../../../packages/core/src/executor.js';
-import { extractRepairPhoto, photoFields } from '../../../packages/core/src/photo.js';
+import { extractRepairPhoto, photoFields, imageMime } from '../../../packages/core/src/photo.js';
 
 export function attachWorkshop(
   app: Express,
@@ -17,6 +17,7 @@ export function attachWorkshop(
     lock: <T>(id: string, operation: () => Promise<T>) => Promise<T>;
     emit: (id: string) => EmitEvent;
     voiceActive: Set<string>;
+    sendVoicePhoto: (id: string, bytes: Buffer) => Promise<void>;
   },
 ) {
   const { repo, runtime, owned, lock, emit, voiceActive } = deps;
@@ -37,6 +38,38 @@ export function attachWorkshop(
       throw Object.assign(new Error('Disconnect voice before changing these details.'), { status: 409 });
     return session;
   };
+  const photoUploads = new Set<string>();
+  app.post(
+    '/api/sessions/:id/voice/photos',
+    async (req, _res, next) => {
+      await owned(req);
+      const id = String(req.params.id);
+      const session = await active(id);
+      if (session.handoff || !voiceActive.has(id))
+        throw Object.assign(new Error('Connect voice before sending a photo.'), { status: 409 });
+      if (!session.scenarioId.startsWith('repair-'))
+        throw Object.assign(new Error('Photos are available for appliance repair.'), { status: 400 });
+      if (photoUploads.has(id))
+        throw Object.assign(new Error('A photo is already being sent.'), { status: 409 });
+      photoUploads.add(id);
+      // Release the reservation on upload errors and aborted requests as well.
+      _res.once('close', () => photoUploads.delete(id));
+      next();
+    },
+    upload.single('image'),
+    async (req, res) => {
+      const id = String(req.params.id);
+      try {
+        await owned(req);
+        if (!req.file) throw Object.assign(new Error('Choose a photo to upload.'), { status: 400 });
+        imageMime(req.file.buffer);
+        await deps.sendVoicePhoto(id, req.file.buffer);
+        res.status(201).json({ sent: true });
+      } finally {
+        photoUploads.delete(id);
+      }
+    },
+  );
   app.post(
     '/api/sessions/:id/photos',
     async (req, res, next) => {

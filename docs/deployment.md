@@ -80,7 +80,7 @@ VOICE_PROVIDER=gemini
 
 Add the chosen provider key privately. Never put it in a `NEXT_PUBLIC_*` variable. Proxy all requests, including WebSocket upgrades and SSE, to the web host port selected by `PORT`. See `infra/nginx.conf.example` and replace its example port. Configure matching hostnames so browser cookies reach both HTTP and voice routes. Gemini PCM travels through your server; OpenAI media travels directly from browser to OpenAI, with a trusted backend sideband for tools.
 
-Demo identity maps all browser sessions to fictional Acme Ltd. Separate browsers cannot open each other's session endpoints. The knowledge base and customer memory are shared demo data, not a private multi-tenant document service. Add real authentication and tenant ownership before using private customer documents or production telecom systems. No API route invokes external email, carrier resets, real callbacks or paging.
+Demo identity maps all browser sessions to a fictional workshop customer. Separate browsers cannot open each other's session endpoints. The knowledge base and customer memory are shared demo data, not a private multi-tenant document service. Add real authentication and tenant ownership before using private customer documents or production workshop systems. No API route invokes external email, repair dispatch, real callbacks or paging.
 
 ## Data and recovery
 

@@ -1,6 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { EmitEvent, Repository, RetrievalService } from './domain.js';
-import { isBusinessScenario } from './business-tools.js';
 import { createTools, type ToolDefinition } from './tools.js';
 import { sanitize } from './redaction.js';
 export { sanitize } from './redaction.js';
@@ -101,20 +100,6 @@ export class ToolExecutor {
         throw new Error('Conversation transferred to a human operator');
       const tool = this.tools.find((t) => t.name === call.name);
       if (!tool) throw new Error(`Unknown tool: ${call.name}`);
-      if (
-        isBusinessScenario(session.scenarioId) &&
-        [
-          'get_account',
-          'get_recent_calls',
-          'get_call_details',
-          'check_trunk_status',
-          'check_number_configuration',
-          'get_service_incidents',
-          'reset_trunk_credentials',
-          'adjust_account_balance',
-        ].includes(tool.name)
-      )
-        throw new Error('Telecom tools are not available in this business scenario');
       let input = tool.inputSchema.parse(sanitize(tool.inputSchema.parse(call.input)));
       if (tool.prepare)
         input = tool.inputSchema.parse(

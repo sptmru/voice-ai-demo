@@ -75,7 +75,7 @@ describe('Gemini raw Live adapter', () => {
     expect(setup.inputAudioTranscription).toEqual({});
     expect(setup.outputAudioTranscription).toEqual({});
     const params = setup.tools[0].functionDeclarations.find(
-      (t: any) => t.name === 'get_recent_calls',
+      (t: any) => t.name === 'search_knowledge_base',
     ).parameters;
     expect(params.type).toBe('OBJECT');
     expect(params.properties.limit.type).toBe('INTEGER');
@@ -186,7 +186,7 @@ describe('Gemini raw Live adapter', () => {
     const message = {
       toolCall: {
         functionCalls: [
-          { id: 'call-1', name: 'get_account', args: {} },
+          { id: 'call-1', name: 'get_repair_catalog', args: {} },
           { id: 'call-2', name: 'get_customer', args: {} },
         ],
       },
@@ -196,13 +196,15 @@ describe('Gemini raw Live adapter', () => {
     expect(f.events.filter((e) => e.type === 'toolCall')).toHaveLength(2);
     const result = {
       id: 'call-1',
-      name: 'get_account',
+      name: 'get_repair_catalog',
       status: 'completed' as const,
       result: { balance: 245.5 },
     };
     await session.sendToolResult(result);
     expect(f.socket.sent.at(-1)).toEqual({
-      toolResponse: { functionResponses: [{ id: 'call-1', name: 'get_account', response: { result } }] },
+      toolResponse: {
+        functionResponses: [{ id: 'call-1', name: 'get_repair_catalog', response: { result } }],
+      },
     });
     await expect(session.sendToolResult(result)).rejects.toThrow('No matching');
     await session.close();
@@ -213,13 +215,13 @@ describe('Gemini raw Live adapter', () => {
     f.socket.server({
       toolCall: {
         functionCalls: [
-          { id: 'reset-1', name: 'reset_trunk_credentials', args: { reason: 'Authentication failed' } },
+          { id: 'reset-1', name: 'approve_repair_quote', args: { reason: 'Authentication failed' } },
         ],
       },
     });
     await session.sendToolResult({
       id: 'reset-1',
-      name: 'reset_trunk_credentials',
+      name: 'approve_repair_quote',
       status: 'pending-confirmation',
       confirmationId: 'approval-1',
     });
@@ -276,4 +278,34 @@ describe('Gemini raw Live adapter', () => {
     await session.close();
     await expect(session.sendText('late')).rejects.toThrow('not ready');
   });
+});
+
+it('sends a photo to the active conversation and rejects invalid images without closing voice', async () => {
+  const f = connect();
+  const session = await f.ready();
+  const photo = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWZkAAAAASUVORK5CYII=',
+    'base64',
+  );
+  await session.sendImage(photo);
+  expect(f.socket.sent.at(-1)!.clientContent).toEqual({
+    turns: [
+      {
+        role: 'user',
+        parts: [
+          { inlineData: { data: photo.toString('base64'), mimeType: 'image/png' } },
+          { text: expect.stringContaining('photo') },
+        ],
+      },
+    ],
+    turnComplete: true,
+  });
+  await session.sendAudio('AAA=', 16000);
+  expect(f.socket.sent.at(-1)!.realtimeInput.audio).toBeDefined();
+  const before = f.socket.sent.length;
+  await expect(session.sendImage(Buffer.from('<svg>invalid image</svg>'))).rejects.toThrow();
+  await expect(session.sendImage(Buffer.alloc(5 * 1024 * 1024 + 1))).rejects.toThrow('5 MB');
+  expect(f.socket.sent.length).toBe(before);
+  expect(f.socket.readyState).toBe(1);
+  await session.close();
 });
